@@ -88,28 +88,28 @@ A common early-stage situation: not every metal/collection (e.g. **Oro / Gold**)
 
 | Token | Hex | Usage |
 |---|---|---|
-| `--ink` | `#2E1A47` | Primary text, dark backgrounds (footer, craft section) |
-| `--ivory` | `#F7F2FC` | Primary page background |
-| `--ivory-2` | `#ECE0F8` | Secondary/alternate section background |
-| `--gold` | `#E5B80B` | Primary accent (buttons, icons) |
-| `--gold-light` | `#F4D35E` | Accent on dark backgrounds, hover highlights |
-| `--gold-deep` | `#A8790A` | Tags, labels, small eyebrow text |
-| `--emerald` | `#2C4E9C` | Secondary brand color, active states |
-| `--emerald-deep` | `#16264A` | Primary buttons, chat widget, dark UI elements |
-| `--rosewood` | `#7C3AAD` | Wishlist "active" state only — used sparingly as an emotional accent |
-| `--line` | `rgba(46,26,71,.13)` | Hairline dividers |
-| `--line-strong` | `rgba(46,26,71,.22)` | Borders needing more definition (outline buttons) |
+| `--ink` | `#14201C` | Primary text, dark backgrounds (craft section) |
+| `--ivory` | `#F6F1E7` | Primary page background |
+| `--ivory-2` | `#EFE7D6` | Secondary/alternate section background |
+| `--gold` | `#B9924F` | Primary accent (buttons, icons) |
+| `--gold-light` | `#E4C583` | Accent on dark backgrounds, hover highlights |
+| `--gold-deep` | `#8C6B33` | Tags, labels, small eyebrow text |
+| `--emerald` | `#1F4D3E` | Secondary brand color, active states |
+| `--emerald-deep` | `#132F26` | Footer, testimonial section, chat widget, announcement bar, dark UI elements |
+| `--rosewood` | `#7A3226` | Wishlist "active" state only — used sparingly as an emotional accent |
+| `--line` | `rgba(20,32,28,.13)` | Hairline dividers |
+| `--line-strong` | `rgba(20,32,28,.22)` | Borders needing more definition (outline buttons) |
 
-> **Note on naming:** token names in the codebase are unchanged (`--gold`, `--emerald`, `--rosewood`, etc.) even though the hues behind them moved — `--emerald` now renders as a sapphire blue and `--rosewood` as an amethyst violet, not their literal namesakes. This keeps the CSS diff small, but anyone new to the codebase should read this table rather than assume the variable name describes the current color.
+> **Note on naming:** token names match their hues — `--emerald` is a deep botanical green, `--rosewood` a muted brick/rose-brown, and `--gold` a warm antique gold. Both `--emerald-deep` and `--ink` are very dark green-blacks, so check the table above when choosing between them: `--ink` for text and the craft section, `--emerald-deep` for the footer, testimonials, chat widget and announcement bar.
 
 ### 2.2 Design Philosophy
-- **Cool neutrals over pure white/black.** Ivory shifted from a warm cream to a pale lavender-white — it still keeps the palette soft and "paper-like" rather than reading as a tech interface, but the undertone is now amethyst instead of stationery-cream.
-- **Sapphire, amethyst and citrine, not black + gold.** This is a deliberate departure both from the black/gold luxury cliché and from the original muted emerald/gold identity. `--emerald` now renders as a rich sapphire blue and `--rosewood` as a saturated amethyst violet; paired with a true yellow-gold `--gold`, the three read as a jeweled trio rather than a single metal-plus-stone accent — still distinctly upscale, but bolder and more contemporary than the original botanical green.
-- **Rosewood is still a single-purpose accent** — same rule as before: reserved only for the wishlist "loved" state, so the new violet stays a special-occasion moment rather than becoming a third background color.
-- **More saturated than the original palette — by design, not by accident.** The original palette used desaturation as its main restraint mechanism; this palette trades some of that muting for clearer jewel-tone identity (true blue, true violet, true yellow). To keep the luxury feel intact, that saturation needs to stay concentrated in small accent moments — icons, buttons, eyebrow labels, the wishlist heart — while `--ivory`/`--ivory-2` continue to carry every large surface. The restraint now lives in the *ratio* of color to neutral space rather than in how muted each individual color is.
+- **Warm neutrals over pure white/black.** Ivory is a warm cream rather than stark white, which keeps the whole palette soft and "paper-like" — closer to a jeweler's stationery than a tech interface. Dark surfaces are a deep green-black, never pure black.
+- **Emerald and gold, not black + gold.** Deliberately avoids the black/gold luxury cliché. A deep emerald paired with muted antique gold reads as heritage and gemstone (emerald, 18K gold) rather than generic "luxury".
+- **Rosewood is a single-purpose accent** — reserved only for the wishlist "loved" state, so it stays a small emotional moment rather than becoming a third brand color.
+- **Restraint through desaturation.** Every color is slightly muted (antique gold instead of bright yellow, deep emerald instead of kelly green). Large surfaces are carried by `--ivory`/`--ivory-2`, with emerald and gold concentrated in small accents — icons, buttons, eyebrow labels, the wishlist heart.
 
 ### 2.3 Recommended Refinement
-- Introduce a **cool stone neutral** — a soft lilac-grey (e.g. `#DED4EC`) — as a tertiary background option for section breaks. It plays the same role a travertine greige would have played for the original warm palette, but tuned to sit comfortably next to the new violet/sapphire/citrine accents instead of fighting them.
+- Introduce a **warm stone neutral** — a soft travertine greige (e.g. `#DCD3C0`) — as a tertiary background option for section breaks, sitting between `--ivory-2` and `--ink` for pages that need more than two surface tones without adding a new hue.
 - Keep all future accent colors (badges, banners, promo callouts) restricted to this existing palette — resist adding new "brand colors" per campaign, which is a common way discount-brand energy creeps back in.
 
 ---
@@ -152,7 +152,7 @@ A common early-stage situation: not every metal/collection (e.g. **Oro / Gold**)
 ### 4.2 Elevation / Shadow System
 Shadows are used sparingly and always **soft, warm, and low-opacity** — never a hard drop shadow:
 ```
---shadow: 0 20px 45px -20px rgba(46,26,71,.35);   /* default card elevation */
+--shadow: 0 20px 45px -20px rgba(20,32,28,.35);   /* default card elevation */
 Hover elevation:   0 30px 60px -20px rgba(0,0,0,.5)
 Widget elevation:  0 14px 30px -14px rgba(0,0,0,.38)
 ```
@@ -239,7 +239,7 @@ The Product Card is the one component with real interactive logic behind it, so 
 ## Summary — The 5 Mechanisms That Make This Feel Luxury
 1. **Slow, eased motion everywhere** (0.3–0.7s, no bounce, no snap)
 2. **Generous whitespace** (140px section padding, wide gaps)
-3. **Restricted jewel-tone palette, ratio-based restraint** (lavender-ivory field carrying violet/sapphire/citrine accents — saturation stays in small accent moments, never used for discount/sale signaling)
+3. **Restricted emerald + gold palette** (warm ivory field with deep emerald and antique gold accents — muted tones, never used for discount/sale signaling)
 4. **Serif + wide-tracked uppercase labels** (the Fraunces/Manrope pairing + `.18em` letter-spacing)
 5. **Absence of urgency mechanics** (no countdowns, no gamified counters, no aggressive popups — quiet confidence instead)
 
