@@ -1,15 +1,9 @@
 """
-GLORYBELLE — Order Models.
+GLORYBELLE — Order Models (with first-purchase discount fields).
 
-Order and OrderItem with snapshotted line-item data.
-Per roadmap Day 6: "snapshots line items (price/name at time of purchase,
-so later catalog edits never retroactively change a past order)."
-Per PRD §3.2: guest checkout supported (Order can exist without a user).
-Per rule.md: never delete a ProductVariant referenced by an existing order (PROTECT).
-
-P1 fix #8: idempotency_key field added per backend-design PDF §6.3 — was on Payment
-only, now also on Order. The unique constraint + index ensures safe retries at the
-database level (same key = same order, no duplicate creation).
+P1 fix #8: idempotency_key field added.
+New feature: discount_percent + discount_amount fields for first-purchase
+discount (10% off for newly registered customers).
 """
 import uuid
 
@@ -22,8 +16,7 @@ class Order(models.Model):
     A customer order.
 
     Supports both authenticated users and guest checkout.
-    Address fields are snapshotted at order creation time — not FK references —
-    so editing an address after purchase never changes a past order.
+    Address fields are snapshotted at order creation time.
     """
 
     STATUS_CHOICES = [
@@ -42,11 +35,6 @@ class Order(models.Model):
         unique=True,
         db_index=True,
     )
-    # P1 fix #8 — backend-design PDF §6.3
-    # Idempotency key generated client-side (UUID per checkout attempt) and passed
-    # both to Order creation AND to Stripe.PaymentIntent.create(idempotency_key=...).
-    # The same key on a retried request returns the original Order instead of
-    # creating a duplicate — protection at the database level (unique constraint).
     idempotency_key = models.CharField(
         "Chiave idempotenza",
         max_length=64,
@@ -54,10 +42,6 @@ class Order(models.Model):
         db_index=True,
         default=uuid.uuid4,
         editable=False,
-        help_text=(
-            "UUID generato lato client per ogni tentativo di checkout. "
-            "Retries con la stessa chiave restituiscono lo stesso ordine."
-        ),
     )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -66,12 +50,8 @@ class Order(models.Model):
         blank=True,
         related_name="orders",
         verbose_name="Utente",
-        help_text="Null per ordini guest (PRD §3.2 Gift Buyer).",
     )
-    email = models.EmailField(
-        "Email",
-        help_text="Email del cliente — richiesta anche per ordini guest.",
-    )
+    email = models.EmailField("Email")
     status = models.CharField(
         "Stato",
         max_length=20,
@@ -121,9 +101,24 @@ class Order(models.Model):
     )
 
     # Totals — always server-calculated (rule.md: never trust client price)
-    subtotal = models.DecimalField(
-        "Subtotale", max_digits=10, decimal_places=2
+    subtotal = models.DecimalField("Subtotale", max_digits=10, decimal_places=2)
+
+    # First-purchase discount fields (10% for newly registered customers)
+    discount_percent = models.DecimalField(
+        "Percentuale sconto",
+        max_digits=5,
+        decimal_places=2,
+        default="0.00",
+        help_text="Percentuale di sconto applicata (es. 10.00 per 10%).",
     )
+    discount_amount = models.DecimalField(
+        "Importo sconto",
+        max_digits=10,
+        decimal_places=2,
+        default="0.00",
+        help_text="Importo dello sconto in euro.",
+    )
+
     shipping_cost = models.DecimalField(
         "Costo spedizione", max_digits=10, decimal_places=2, default="0.00"
     )
@@ -138,7 +133,6 @@ class Order(models.Model):
     )
 
     notes = models.TextField("Note del cliente", blank=True)
-
     created_at = models.DateTimeField("Creato il", auto_now_add=True)
     updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
 
@@ -157,16 +151,7 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    """
-    A line item in an order — snapshotted at purchase time.
-
-    All display fields (product_name, variant_metal, variant_size, sku,
-    unit_price) are copied from the catalog at order creation. This means
-    later edits to a product's name, price, or SKU never change a past order.
-
-    variant FK uses PROTECT — per rule.md: never delete a ProductVariant
-    referenced by an existing order.
-    """
+    """A line item in an order — snapshotted at purchase time."""
 
     order = models.ForeignKey(
         Order,
@@ -184,9 +169,7 @@ class OrderItem(models.Model):
     # Snapshotted product data at time of purchase
     product_name = models.CharField("Nome prodotto", max_length=200)
     variant_metal = models.CharField("Metallo", max_length=20)
-    variant_metal_display = models.CharField(
-        "Metallo (display)", max_length=50
-    )
+    variant_metal_display = models.CharField("Metallo (display)", max_length=50)
     variant_size = models.CharField("Misura", max_length=20)
     sku = models.CharField("SKU", max_length=50)
     unit_price = models.DecimalField(

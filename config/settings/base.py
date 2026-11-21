@@ -11,6 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
+from decimal import Decimal
 
 # =============================================================================
 # Paths
@@ -318,3 +319,5 @@ UNFOLD = {
     },
     "DASHBOARD_CALLBACK": "config.dashboard_callback.dashboard_callback",
 }
+FIRST_PURCHASE_DISCOUNT_PERCENT = Decimal("10.00")
+FIRST_PURCHASE_DISCOUNT_MIN_SUBTOTAL = Decimal("0.00")  # no minimum threshold

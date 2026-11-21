@@ -1,19 +1,18 @@
 """
 GLORYBELLE — Account Views.
 
-Thin HTTP adapter — registration, profile, addresses, auth.
-
-P1 fix #10: adds logout (JWT refresh token blacklist) and password-reset
-request endpoints. The actual password reset confirmation + set-new-password
-flow is implemented as a two-step sequence (request → confirm) per OWASP best
-practice.
+P1 fix #10: logout, password-reset endpoints.
+New: GET /api/accounts/first-purchase-discount/ — eligibility check for the
+first-purchase 10% discount. Used by the frontend to show the offer to guests
+who haven't registered yet.
 """
 import logging
+from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
-from django.conf import settings
 from django.template.loader import render_to_string
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
@@ -29,6 +28,7 @@ from .models import Address, CustomerProfile
 from .serializers import (
     AddressSerializer,
     CustomerProfileSerializer,
+    FirstPurchaseDiscountSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetSerializer,
     RegisterSerializer,
@@ -39,11 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class RegisterView(generics.CreateAPIView):
-    """
-    POST /api/accounts/register/
-
-    Create a new user account. Returns JWT tokens.
-    """
+    """POST /api/accounts/register/"""
 
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
@@ -53,7 +49,6 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
 
         return Response(
@@ -75,18 +70,7 @@ class RegisterView(generics.CreateAPIView):
 
 
 class LogoutView(APIView):
-    """
-    POST /api/accounts/logout/
-
-    Blacklist the refresh token so it can no longer be used to mint new access tokens.
-    Requires the refresh token in the request body.
-
-    Per rule.md: "Avoid weakening password/auth requirements temporarily."
-    Logout is permanent — once blacklisted, the refresh token is dead.
-
-    Request body: {"refresh": "<refresh_token>"}
-    Returns: 204 No Content on success
-    """
+    """POST /api/accounts/logout/"""
 
     permission_classes = [IsAuthenticated]
 
@@ -110,16 +94,7 @@ class LogoutView(APIView):
 
 
 class PasswordResetView(APIView):
-    """
-    POST /api/accounts/password/reset/
-
-    Request a password reset email. Sends a token + uid to the user's email
-    if an account with that email exists. Always returns 202 (never reveals
-    whether the email exists in our database — anti-enumeration).
-
-    Request body: {"email": "user@example.com"}
-    Returns: 202 Accepted (always)
-    """
+    """POST /api/accounts/password/reset/"""
 
     permission_classes = [AllowAny]
 
@@ -131,25 +106,16 @@ class PasswordResetView(APIView):
         try:
             user = User.objects.get(email__iexact=email, is_active=True)
         except User.DoesNotExist:
-            # Don't reveal whether the email exists — return success silently
             return Response(
                 {"detail": "Se l'email esiste, riceverai un link di reset."},
                 status=status.HTTP_202_ACCEPTED,
             )
 
-        # Generate one-time token + uid
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-        # Build reset URL — frontend route that handles the reset form
         reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
 
-        # Send email — uses console backend in dev (EMAIL_BACKEND), SendGrid in prod
-        context = {
-            "user": user,
-            "reset_url": reset_url,
-            "site_name": "GLORYBELLE",
-        }
         try:
             plain_message = (
                 f"Hai richiesto di reimpostare la password del tuo account GLORYBELLE.\n\n"
@@ -175,15 +141,7 @@ class PasswordResetView(APIView):
 
 
 class PasswordResetConfirmView(APIView):
-    """
-    POST /api/accounts/password/reset/confirm/
-
-    Set a new password using the uid + token from the reset email.
-
-    Request body:
-        {"uid": "<uid>", "token": "<token>", "new_password": "..."}
-    Returns: 200 OK on success
-    """
+    """POST /api/accounts/password/reset/confirm/"""
 
     permission_classes = [AllowAny]
 
@@ -203,7 +161,6 @@ class PasswordResetConfirmView(APIView):
         user.set_password(new_password)
         user.save(update_fields=["password"])
 
-        # Invalidate all outstanding refresh tokens for this user (security best practice)
         from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
         from rest_framework_simplejwt.tokens import RefreshToken
         try:
@@ -224,10 +181,8 @@ class PasswordResetConfirmView(APIView):
 
 
 class MeView(generics.RetrieveUpdateAPIView):
-    """
-    GET  /api/accounts/me/  → current user profile
-    PATCH /api/accounts/me/ → update profile
-    """
+    """GET  /api/accounts/me/  → profile
+    PATCH /api/accounts/me/ → update"""
 
     serializer_class = CustomerProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -237,16 +192,62 @@ class MeView(generics.RetrieveUpdateAPIView):
         return profile
 
 
-class AddressViewSet(viewsets.ModelViewSet):
+class FirstPurchaseDiscountView(APIView):
     """
-    CRUD for customer addresses. Owner-scoped.
+    GET /api/accounts/first-purchase-discount/
 
-    GET    /api/accounts/addresses/      → list user's addresses
-    POST   /api/accounts/addresses/      → create new address
-    GET    /api/accounts/addresses/{id}/  → retrieve
-    PATCH  /api/accounts/addresses/{id}/  → update
-    DELETE /api/accounts/addresses/{id}/  → delete
+    Returns whether the current user (or a guest, by default) is eligible
+    for the first-purchase 10% discount. Used by the frontend to show
+    the offer banner in the cart drawer.
+
+    Response:
+        {
+            "eligible": true,
+            "percent": "10.00",
+            "message": "Registra un account e ottieni il 10% di sconto sul primo ordine."
+        }
+
+    For authenticated users: returns true if they have no prior completed orders.
+    For guests: always returns true (they would need to register to claim).
     """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        # Import here to avoid circular import
+        from apps.orders.services import is_first_purchase
+
+        if request.user.is_authenticated:
+            eligible = is_first_purchase(request.user)
+            if eligible:
+                message = "Hai diritto al 10% di sconto sul tuo primo ordine!"
+            else:
+                message = ""
+        else:
+            eligible = True
+            message = (
+                "Registra un account e ottieni il 10% di sconto sul primo ordine."
+            )
+
+        percent = getattr(
+            settings,
+            "FIRST_PURCHASE_DISCOUNT_PERCENT",
+            Decimal("10.00"),
+        )
+
+        serializer = FirstPurchaseDiscountSerializer(
+            data={
+                "eligible": eligible,
+                "percent": str(percent),
+                "message": message,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data)
+
+
+class AddressViewSet(viewsets.ModelViewSet):
+    """CRUD for customer addresses."""
 
     serializer_class = AddressSerializer
     permission_classes = [IsAuthenticated, IsOwner]

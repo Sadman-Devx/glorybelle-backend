@@ -1,9 +1,8 @@
 """
 GLORYBELLE — Account Serializers.
 
-P1 fix #10: adds PasswordResetSerializer and PasswordResetConfirmSerializer
-for the new /api/accounts/password/reset/ and /api/accounts/password/reset/confirm/
-endpoints.
+P1 fix #10: PasswordReset serializers added.
+New: birth_date field added to RegisterSerializer (PRD §2.2 + project owner request).
 """
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
@@ -44,6 +43,10 @@ class RegisterSerializer(serializers.Serializer):
 
     Creates User + CustomerProfile in one step.
     Returns JWT tokens on success.
+
+    New: birth_date is required at registration (project owner request).
+    Used to personalize the customer experience and for first-purchase
+    eligibility tracking.
     """
 
     username = serializers.CharField(max_length=150)
@@ -53,6 +56,11 @@ class RegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=30, required=False, default="")
     last_name = serializers.CharField(max_length=150, required=False, default="")
     phone = serializers.CharField(max_length=20, required=False, default="")
+    # NEW — birth_date required at registration
+    birth_date = serializers.DateField(
+        required=True,
+        help_text="Data di nascita — usata per personalizzare l'esperienza.",
+    )
 
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():
@@ -64,6 +72,19 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError("Questa email è già registrata.")
         return value
 
+    def validate_birth_date(self, value):
+        """Validate birth_date — must be at least 13 years old (COPPA-equivalent)."""
+        from datetime import date
+        today = date.today()
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+        if age < 13:
+            raise serializers.ValidationError(
+                "Devi avere almeno 13 anni per registrarti."
+            )
+        if age > 120:
+            raise serializers.ValidationError("Data di nascita non valida.")
+        return value
+
     def validate(self, data):
         if data["password"] != data["password_confirm"]:
             raise serializers.ValidationError(
@@ -73,6 +94,7 @@ class RegisterSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         phone = validated_data.pop("phone", "")
+        birth_date = validated_data.pop("birth_date")
         validated_data.pop("password_confirm")
 
         user = User.objects.create_user(
@@ -82,13 +104,13 @@ class RegisterSerializer(serializers.Serializer):
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
         )
-        CustomerProfile.objects.create(user=user, phone=phone)
+        CustomerProfile.objects.create(
+            user=user,
+            phone=phone,
+            date_of_birth=birth_date,
+        )
         return user
 
-
-# =============================================================================
-# Password Reset (P1 fix #10)
-# =============================================================================
 
 class PasswordResetSerializer(serializers.Serializer):
     """Input for POST /api/accounts/password/reset/."""
@@ -97,13 +119,7 @@ class PasswordResetSerializer(serializers.Serializer):
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    """
-    Input for POST /api/accounts/password/reset/confirm/.
-
-    Validates the uid + token pair from the reset email, then sets the
-    new password. The user is attached to validated_data so the view can
-    call user.set_password().
-    """
+    """Input for POST /api/accounts/password/reset/confirm/."""
 
     uid = serializers.CharField()
     token = serializers.CharField()
@@ -129,10 +145,6 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return data
 
 
-# =============================================================================
-# Addresses
-# =============================================================================
-
 class AddressSerializer(serializers.ModelSerializer):
     """Customer address CRUD."""
 
@@ -156,3 +168,11 @@ class AddressSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user
         return super().create(validated_data)
+
+
+class FirstPurchaseDiscountSerializer(serializers.Serializer):
+    """Response serializer for GET /api/accounts/first-purchase-discount/."""
+
+    eligible = serializers.BooleanField()
+    percent = serializers.DecimalField(max_digits=5, decimal_places=2)
+    message = serializers.CharField(allow_blank=True)

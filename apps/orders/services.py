@@ -1,27 +1,15 @@
 """
 GLORYBELLE — Order Services.
 
-THIS IS CRITICAL ORDER LOGIC — all order creation lives here.
-
-Per rule.md:
-  - "Avoid business logic in views.py"
-  - "Never trust a client-supplied price, subtotal, or total"
-  - "Avoid save() without update_fields=[...] when only one or two fields changed"
-
-Per roadmap Day 6:
-  - create_order_from_cart() snapshots line items at time of purchase
-  - Checkout endpoint creates Order (status=pending)
-
-P1 fix #8: create_order_from_cart now accepts an optional idempotency_key.
-If provided, it's set on the Order; the unique constraint protects against
-duplicate creation if the same key is used twice (the CheckoutView checks
-first and returns the existing order, so this is a defense-in-depth).
+P1 fix #8: idempotency_key support.
+New feature: first-purchase discount — 10% off for newly registered customers.
 """
 import logging
 import random
 import string
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -35,12 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_order_number():
-    """
-    Generate a unique order number: GB-YYYYMMDD-XXXX.
-
-    Format matches Italian business conventions. 4-character alphanumeric
-    suffix provides enough uniqueness for daily order volume.
-    """
+    """Generate a unique order number: GB-YYYYMMDD-XXXX."""
     date_part = timezone.now().strftime("%Y%m%d")
     while True:
         suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
@@ -63,6 +46,54 @@ def _snapshot_address(address):
     }
 
 
+def is_first_purchase(user) -> bool:
+    """
+    Check if the user is eligible for the first-purchase discount.
+
+    Eligibility:
+    - User is authenticated
+    - Has NO prior orders with status in ['paid', 'processing', 'shipped', 'delivered']
+      (cancelled/pending/refunded orders don't count — they didn't complete a purchase)
+
+    Note: The CURRENT order being created doesn't exist yet, so it won't show in the query.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    completed_statuses = ["paid", "processing", "shipped", "delivered"]
+    return not Order.objects.filter(
+        user=user, status__in=completed_statuses
+    ).exists()
+
+
+def calculate_discount(subtotal: Decimal, user) -> tuple[Decimal, Decimal]:
+    """
+    Calculate discount for an order.
+
+    Returns:
+        (discount_percent, discount_amount)
+    """
+    discount_percent = Decimal("0.00")
+    discount_amount = Decimal("0.00")
+
+    if not is_first_purchase(user):
+        return discount_percent, discount_amount
+
+    min_subtotal = getattr(
+        settings, "FIRST_PURCHASE_DISCOUNT_MIN_SUBTOTAL", Decimal("0.00")
+    )
+    if subtotal < min_subtotal:
+        return discount_percent, discount_amount
+
+    discount_percent = getattr(
+        settings, "FIRST_PURCHASE_DISCOUNT_PERCENT", Decimal("10.00")
+    )
+    discount_amount = (subtotal * discount_percent / Decimal("100")).quantize(
+        Decimal("0.01")
+    )
+
+    return discount_percent, discount_amount
+
+
 def create_order_from_cart(
     cart,
     email,
@@ -78,30 +109,8 @@ def create_order_from_cart(
     """
     Create an Order from a Cart, snapshotting all line items.
 
-    Per rule.md: prices are ALWAYS resolved server-side from
-    ProductVariant.price_override / Product.base_price — never from
-    client-supplied values.
-
-    Args:
-        cart: Cart instance
-        email: Customer email (required even for guests)
-        shipping_address_id: ID of saved Address (for authenticated users)
-        shipping_address_data: Dict of address fields (for guest/inline)
-        billing_address_id: ID of saved billing Address
-        billing_address_data: Dict of billing address fields
-        billing_same_as_shipping: If True, copy shipping to billing
-        user: User instance (None for guest checkout)
-        notes: Optional customer notes
-        idempotency_key: Optional UUID per checkout attempt (P1 fix #8).
-            If provided, set on the Order. Defense-in-depth against duplicate
-            creation — CheckoutView checks first and returns existing order.
-
-    Returns:
-        Order instance with status=pending
-
-    Raises:
-        CartEmpty: if cart has no items
-        ReservationExpired: if any stock reservation has expired
+    Applies first-purchase discount automatically if the user is eligible
+    (authenticated + no prior completed orders).
     """
     cart_items = cart.items.select_related(
         "variant", "variant__product"
@@ -152,15 +161,14 @@ def create_order_from_cart(
     elif billing_address_data:
         billing = billing_address_data
     else:
-        billing = shipping  # Fallback to shipping
+        billing = shipping
 
     with transaction.atomic():
-        # Calculate totals server-side (rule.md: never trust client price)
+        # Calculate subtotal server-side (rule.md: never trust client price)
         subtotal = Decimal("0.00")
         order_items_data = []
 
         for item in cart_items:
-            # Resolve price server-side
             unit_price = item.variant.price
             line_total = unit_price * item.quantity
             subtotal += line_total
@@ -177,9 +185,14 @@ def create_order_from_cart(
                 "line_total": line_total,
             })
 
-        # Shipping cost — free shipping for now (can be configured later)
+        # Calculate discount (NEW — first-purchase 10% off)
+        discount_percent, discount_amount = calculate_discount(subtotal, user)
+
+        # Shipping cost — free shipping for now
         shipping_cost = Decimal("0.00")
-        total = subtotal + shipping_cost
+
+        # Total = subtotal - discount + shipping
+        total = subtotal - discount_amount + shipping_cost
 
         # Create Order
         order_kwargs = dict(
@@ -205,29 +218,43 @@ def create_order_from_cart(
             billing_province=billing["province"],
             billing_postal_code=billing["postal_code"],
             billing_country=billing.get("country", "IT"),
-            # Totals
+            # Totals + discount
             subtotal=subtotal,
+            discount_percent=discount_percent,
+            discount_amount=discount_amount,
             shipping_cost=shipping_cost,
             total=total,
             notes=notes,
         )
 
-        # P1 fix #8 — set idempotency_key if provided (otherwise default UUID kicks in)
         if idempotency_key:
             order_kwargs["idempotency_key"] = str(idempotency_key)
 
         order = Order.objects.create(**order_kwargs)
 
-        # Create OrderItems — snapshot data frozen at purchase time
+        # Create OrderItems
         for item_data in order_items_data:
             OrderItem.objects.create(order=order, **item_data)
 
-        logger.info(
-            "Created order %s for %s — %d items, total €%.2f",
-            order.order_number,
-            email,
-            len(order_items_data),
-            total,
-        )
+        if discount_amount > 0:
+            logger.info(
+                "Created order %s for %s — %d items, subtotal €%.2f, "
+                "first-purchase discount %.2f%% (−€%.2f), total €%.2f",
+                order.order_number,
+                email,
+                len(order_items_data),
+                subtotal,
+                discount_percent,
+                discount_amount,
+                total,
+            )
+        else:
+            logger.info(
+                "Created order %s for %s — %d items, total €%.2f",
+                order.order_number,
+                email,
+                len(order_items_data),
+                total,
+            )
 
     return order

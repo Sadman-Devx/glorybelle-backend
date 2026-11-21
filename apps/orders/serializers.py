@@ -1,9 +1,8 @@
 """
 GLORYBELLE — Order Serializers.
 
-P1 fix #9: OrderListSerializer.get_item_count now reads the annotated
-`item_count_annotated` field from the queryset (set in OrderHistoryView)
-instead of calling obj.items.count() per row — eliminates N+1 on /api/orders/.
+P1 fix #8: idempotency_key exposed.
+New: discount_percent + discount_amount fields in OrderSerializer + OrderListSerializer.
 """
 from rest_framework import serializers
 
@@ -30,19 +29,20 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    """Full order detail with all snapshotted items."""
+    """Full order detail with all snapshotted items + discount info."""
 
     items = OrderItemSerializer(many=True, read_only=True)
     status_display = serializers.CharField(
         source="get_status_display", read_only=True
     )
+    has_discount = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
             "id",
             "order_number",
-            "idempotency_key",  # P1 fix #8 — expose so the client can replay
+            "idempotency_key",
             "email",
             "status",
             "status_display",
@@ -64,8 +64,11 @@ class OrderSerializer(serializers.ModelSerializer):
             "billing_province",
             "billing_postal_code",
             "billing_country",
-            # Totals
+            # Totals + discount
             "subtotal",
+            "discount_percent",
+            "discount_amount",
+            "has_discount",
             "shipping_cost",
             "total",
             "notes",
@@ -75,20 +78,18 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def get_has_discount(self, obj):
+        return obj.discount_amount > 0
+
 
 class OrderListSerializer(serializers.ModelSerializer):
-    """Lightweight order list for order history.
-
-    P1 fix #9: get_item_count prefers the annotated value
-    (item_count_annotated from the queryset) when present, falling back
-    to obj.items.count() only as a safety net for callers that bypass
-    OrderHistoryView.
-    """
+    """Lightweight order list for order history."""
 
     status_display = serializers.CharField(
         source="get_status_display", read_only=True
     )
     item_count = serializers.SerializerMethodField()
+    has_discount = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -97,6 +98,9 @@ class OrderListSerializer(serializers.ModelSerializer):
             "order_number",
             "status",
             "status_display",
+            "subtotal",
+            "discount_amount",
+            "has_discount",
             "total",
             "item_count",
             "created_at",
@@ -104,37 +108,25 @@ class OrderListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_item_count(self, obj):
-        # P1 fix #9 — prefer the annotated value (no extra query)
         annotated = getattr(obj, "item_count_annotated", None)
         if annotated is not None:
             return annotated
-        # Safety net — fallback for direct serializer usage outside the view
         return obj.items.count()
+
+    def get_has_discount(self, obj):
+        return obj.discount_amount > 0
 
 
 class CheckoutSerializer(serializers.Serializer):
-    """
-    Input for the checkout endpoint.
-
-    Supports both saved address (by ID) and inline address data.
-    Per PRD §3.2: guest checkout requires email but no account.
-
-    P1 fix #8: optional idempotency_key (UUID per checkout attempt) —
-    retried requests with the same key return the original order.
-    """
+    """Input for the checkout endpoint."""
 
     email = serializers.EmailField()
     notes = serializers.CharField(required=False, default="", allow_blank=True)
-
-    # Idempotency — UUID per checkout attempt. Frontend generates it on first
-    # submit and reuses it on retries (network timeout, double-click).
     idempotency_key = serializers.UUIDField(required=False)
 
-    # Shipping — either an ID or inline data
     shipping_address_id = serializers.IntegerField(required=False)
     shipping_address = serializers.DictField(required=False)
 
-    # Billing
     billing_same_as_shipping = serializers.BooleanField(default=True)
     billing_address_id = serializers.IntegerField(required=False)
     billing_address = serializers.DictField(required=False)
@@ -148,7 +140,6 @@ class CheckoutSerializer(serializers.Serializer):
                 {"shipping_address": "È necessario un indirizzo di spedizione."}
             )
 
-        # Validate inline address fields if provided
         if has_shipping_data:
             required_fields = [
                 "first_name", "last_name", "line1",
