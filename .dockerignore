@@ -1,0 +1,41 @@
+# Secrets — must never end up inside an image
+.env
+.env.*
+!.env.example
+
+# VCS / IDE / OS
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# Python artefacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases and generated files
+*.sqlite3
+*.sqlite3-*
+media/
+staticfiles/
+static_collected/
+postgres_data/
+
+# Not needed at runtime
+docs/
+tests/
+conftest.py
+pytest.ini
+requirements/local.txt
+README.md
+docker-compose*.yml
+Dockerfile
+.dockerignore
+node_modules/

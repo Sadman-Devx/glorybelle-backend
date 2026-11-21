@@ -9,7 +9,11 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from core.health import health
+
 urlpatterns = [
+    # Healthcheck (Docker / load balancer)
+    path("health/", health, name="health"),
     # Admin
     path("admin/", admin.site.urls),
     # API — each app registers its own routes

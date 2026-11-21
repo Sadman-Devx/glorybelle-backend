@@ -28,48 +28,16 @@ INTERNAL_IPS = ["127.0.0.1"]
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # =============================================================================
-# Database — PostgreSQL primary, SQLite fallback
-# Tries to connect to PostgreSQL (DATABASE_URL from .env via base.py).
-# If PostgreSQL is unavailable, falls back to SQLite automatically.
+# Database — PostgreSQL only (DATABASES is defined in base.py from DATABASE_URL).
+# There is intentionally NO SQLite fallback: dev, test and prod all run on the
+# same engine. Start the database with:  docker compose up -d db redis
 # =============================================================================
-try:
-    import psycopg2  # noqa: F401
-
-    from django.db import connections  # noqa: F401
-
-    # Test if PostgreSQL is actually reachable
-    import dj_database_url
-
-    _db_url = config("DATABASE_URL", default="")  # noqa: F405
-    if _db_url:
-        _test_conf = dj_database_url.parse(_db_url)
-        _conn = psycopg2.connect(
-            dbname=_test_conf.get("NAME", ""),
-            user=_test_conf.get("USER", ""),
-            password=_test_conf.get("PASSWORD", ""),
-            host=_test_conf.get("HOST", "localhost"),
-            port=_test_conf.get("PORT", "5432"),
-            connect_timeout=2,
-        )
-        _conn.close()
-        # PostgreSQL is reachable — use it (already set in base.py)
-        print("[DB] Using PostgreSQL")
-    else:
-        raise Exception("No DATABASE_URL")
-except Exception:
-    # PostgreSQL unavailable — fall back to SQLite
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",  # noqa: F405
-        }
-    }
-    print("[DB] PostgreSQL unavailable, using SQLite fallback")
 
 
 # =============================================================================
-# Cache — LocMemCache for local dev without Redis
-# If Redis is running (docker compose up), comment this block to use Redis.
+# Cache — LocMemCache for local dev (no Redis needed for the Django process)
+# Celery still uses REDIS_URL as its broker, so keep Redis running if you run
+# workers:  docker compose up -d db redis
 # =============================================================================
 CACHES = {
     "default": {
