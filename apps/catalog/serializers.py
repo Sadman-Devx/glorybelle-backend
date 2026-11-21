@@ -136,12 +136,26 @@ class ProductListSerializer(serializers.ModelSerializer):
         return {"min": str(min(prices)), "max": str(max(prices))}
 
     def get_available_metals(self, obj):
-        """Return list of metals that have stock > 0."""
-        return list(
-            obj.variants.filter(is_active=True, stock_quantity__gt=0)
-            .values_list("metal", flat=True)
-            .distinct()
-        )
+        """
+        Return list of metals that have REAL availability > 0.
+
+        P0 fix #4 — previous code filtered by `stock_quantity__gt=0`, which
+        ignores reserved_quantity. A fully-reserved variant (stock=1,
+        reserved=1, available=0) was incorrectly reported as "available",
+        so customers could see + filter by a metal that they could never
+        actually add to cart.
+
+        Per backend-design PDF §6.11: available stock = stock_quantity −
+        reserved_quantity. We compute this in Python because Django ORM
+        can't directly subtract two columns in a filter without F()
+        expressions + annotation; the variants list is already prefetched
+        (no extra query cost), so iterating in Python is fine here.
+        """
+        available_metals = set()
+        for variant in obj.variants.filter(is_active=True):
+            if variant.stock_quantity - variant.reserved_quantity > 0:
+                available_metals.add(variant.metal)
+        return sorted(available_metals)
 
 
 class ProductDetailSerializer(serializers.ModelSerializer):

@@ -25,12 +25,16 @@ ENV/
 # Django
 *.log
 local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# All SQLite databases — covers db.sqlite3, db_test.sqlite3, db_dev.sqlite3, etc.
+# (P0 fix #5 — db_test.sqlite3 was previously committed because only the exact
+# name "db.sqlite3" was ignored. Wildcard catches every .sqlite3 variant.)
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
 media/
 staticfiles/
 static_collected/
-
 # IDE
 .vscode/
 .idea/
