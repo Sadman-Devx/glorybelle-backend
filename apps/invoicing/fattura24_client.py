@@ -4,10 +4,16 @@ GLORYBELLE — Fattura24 Client.
 Thin wrapper around the Fattura24 API for Italian electronic invoicing (SDI).
 Per architecture.md §1.2: "Called from a Celery task so a temporary outage
 doesn't block checkout."
+
+P1 fix #15: real HTTP integration (previously mocked). Now actually POSTs
+to Fattura24's /api/v0.3/SaveDocument endpoint when FATTURA24_API_KEY is
+configured. Mock path retained for local dev / tests where the key is
+"placeholder" or unset.
 """
 import logging
 import xml.etree.ElementTree as ET
 
+import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -25,6 +31,11 @@ def _build_invoice_xml(order):
     - Cessionario/Committente (buyer info)
     - DatiBeniServizi (line items)
     - DatiPagamento (payment terms)
+
+    For the initial integration we build the document via Fattura24's
+    "Customer -> Document" template, which fills in the seller info
+    from the configured Fattura24 account. The XML below is what we
+    send to Fattura24's SaveDocument endpoint.
     """
     root = ET.Element("FatturaElettronica")
 
@@ -81,13 +92,17 @@ def create_invoice(order):
     Submit an invoice to Fattura24 for SDI processing.
 
     Returns:
-        dict: {"fattura24_id": str, "pdf_url": str} on success
+        dict: {"fattura24_id": str, "pdf_url": str, "xml_content": str}
 
     Raises:
-        Exception: on API failure (handled by Celery retry)
+        requests.RequestException: on network/HTTP errors (caught by Celery retry)
+        ValueError: on unexpected Fattura24 response (no doc_id returned)
+
+    P1 fix #15 — real HTTP integration (previously mocked).
     """
     api_key = settings.FATTURA24_API_KEY
 
+    # Mock path — when API key is unset (local dev / tests)
     if not api_key or api_key == "placeholder":
         logger.warning(
             "Fattura24 API key not configured — skipping invoice for order %s",
@@ -101,23 +116,80 @@ def create_invoice(order):
 
     xml_content = _build_invoice_xml(order)
 
-    # In production, this would POST to the Fattura24 API:
-    # response = requests.post(
-    #     f"{FATTURA24_API_URL}/CreateDocument",
-    #     data={"apiKey": api_key, "xml": xml_content},
-    # )
-    # response.raise_for_status()
-    # result = response.json()
+    # P1 fix #15 — REAL Fattura24 API call
+    # Docs: https://www.fattura24.com/api-documentazione/
+    # Endpoint: /api/v0.3/SaveDocument
+    try:
+        response = requests.post(
+            f"{FATTURA24_API_URL}/SaveDocument",
+            data={
+                "apiKey": api_key,
+                "xml": xml_content,
+                "template": settings.FATTURA24_TEMPLATE_ID,
+            },
+            timeout=30,  # 30s timeout — Fattura24 is occasionally slow
+        )
+        response.raise_for_status()
 
-    logger.info(
-        "Invoice submitted to Fattura24 for order %s", order.order_number
-    )
+        result = response.json()
 
-    return {
-        "fattura24_id": f"F24-{order.order_number}",
-        "pdf_url": "",
-        "xml_content": xml_content,
-    }
+        # Fattura24 returns {"code": 200, "message": "...", "id": "..."}
+        if result.get("code") != 200:
+            raise ValueError(
+                f"Fattura24 returned non-success code: {result.get('code')} "
+                f"— message: {result.get('message', 'no message')}"
+            )
+
+        fattura24_id = result.get("id", "")
+        if not fattura24_id:
+            raise ValueError(
+                "Fattura24 returned success code but no document ID — "
+                "cannot continue without an ID"
+            )
+
+        logger.info(
+            "Invoice %s submitted to Fattura24 (doc_id=%s) for order %s",
+            fattura24_id,
+            fattura24_id,
+            order.order_number,
+        )
+
+        return {
+            "fattura24_id": fattura24_id,
+            "pdf_url": result.get("pdf_url", ""),
+            "xml_content": xml_content,
+        }
+
+    except requests.Timeout as exc:
+        logger.error(
+            "Fattura24 timeout for order %s: %s",
+            order.order_number,
+            str(exc),
+        )
+        raise
+    except requests.ConnectionError as exc:
+        logger.error(
+            "Fattura24 connection error for order %s: %s",
+            order.order_number,
+            str(exc),
+        )
+        raise
+    except requests.HTTPError as exc:
+        logger.error(
+            "Fattura24 HTTP error for order %s: %s — response: %s",
+            order.order_number,
+            str(exc),
+            exc.response.text[:500] if exc.response is not None else "no response body",
+        )
+        raise
+    except ValueError as exc:
+        # JSON parse error or unexpected response shape
+        logger.error(
+            "Fattura24 returned unexpected data for order %s: %s",
+            order.order_number,
+            str(exc),
+        )
+        raise
 
 
 def get_invoice_status(fattura24_id):
@@ -125,12 +197,40 @@ def get_invoice_status(fattura24_id):
     Check the status of a submitted invoice on Fattura24.
 
     Returns:
-        str: status string (e.g., "accepted", "rejected")
+        str: status string (e.g., "accepted", "rejected", "submitted")
+
+    P1 fix #15 — real HTTP poll against Fattura24's /GetDocumentStatus endpoint.
     """
     api_key = settings.FATTURA24_API_KEY
 
     if not api_key or api_key == "placeholder":
         return "submitted"
 
-    # In production: poll Fattura24 API for status
-    return "submitted"
+    try:
+        response = requests.post(
+            f"{FATTURA24_API_URL}/GetDocumentStatus",
+            data={
+                "apiKey": api_key,
+                "docId": fattura24_id,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        # Map Fattura24's status codes to our internal statuses
+        code = result.get("code", -1)
+        if code == 200:
+            return "accepted"
+        elif code in (404, 405):
+            return "rejected"
+        else:
+            return "submitted"
+
+    except requests.RequestException as exc:
+        logger.warning(
+            "Failed to fetch invoice status from Fattura24 (doc_id=%s): %s",
+            fattura24_id,
+            str(exc),
+        )
+        return "submitted"  # Fail soft — assume in-progress on API error

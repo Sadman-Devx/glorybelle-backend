@@ -13,6 +13,8 @@ Per architecture.md §1.3:
   - Add to cart → transaction.atomic() → select_for_update() on variant
   - Check real availability (stock − reserved)
   - Create 15-minute StockReservation
+
+P1 fix #10: clear_cart() function added for DELETE /api/cart/ endpoint.
 """
 import logging
 from datetime import timedelta
@@ -230,6 +232,59 @@ def update_cart_item_quantity(cart, cart_item_id, new_quantity):
         cart_item.save(update_fields=["quantity", "updated_at"])
 
     return cart_item
+
+
+def clear_cart(cart):
+    """
+    Remove ALL items from a cart and release all stock reservations.
+
+    P1 fix #10 — supports DELETE /api/cart/ endpoint.
+    Iterates each cart item, releases its reservations, then deletes.
+    Uses select_for_update on each variant to honor rule.md §1.
+    """
+    with transaction.atomic():
+        cart_items = list(cart.items.select_related("variant").all())
+        if not cart_items:
+            return
+
+        # Group reservations by variant for batch release
+        variant_ids = {item.variant_id for item in cart_items}
+        variants = {
+            v.id: v
+            for v in ProductVariant.objects.select_for_update().filter(
+                id__in=variant_ids
+            )
+        }
+
+        total_released_per_variant = {vid: 0 for vid in variant_ids}
+
+        for cart_item in cart_items:
+            active_reservations = StockReservation.objects.filter(
+                cart_item=cart_item, is_active=True
+            )
+            for reservation in active_reservations:
+                total_released_per_variant[reservation.variant_id] += reservation.quantity
+                reservation.is_active = False
+                reservation.save(update_fields=["is_active"])
+
+        # Decrement reserved_quantity on each variant
+        for vid, released in total_released_per_variant.items():
+            if released > 0 and vid in variants:
+                variant = variants[vid]
+                variant.reserved_quantity = max(
+                    0, variant.reserved_quantity - released
+                )
+                variant.save(update_fields=["reserved_quantity"])
+
+        # Delete all cart items
+        cart.items.all().delete()
+
+        logger.info(
+            "Cleared cart %s — removed %d items, released reservations on %d variants",
+            cart,
+            len(cart_items),
+            len([r for r in total_released_per_variant.values() if r > 0]),
+        )
 
 
 def merge_carts(session_key, user):

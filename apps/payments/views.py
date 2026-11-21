@@ -5,9 +5,13 @@ Stripe webhook endpoint.
 Per rule.md:
   - "Never skip Stripe webhook signature verification"
   - "Never mark an order 'paid' from the client-side redirect alone"
+
+P1 fix #13: replaced bare `except Exception` with specific exception classes
+(stripe.error.SignatureVerificationError, ValueError) per rule.md §1.
 """
 import logging
 
+import stripe
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import (
@@ -45,17 +49,29 @@ def stripe_webhook_view(request):
       "Never skip Stripe webhook signature verification, even in a rush
       to ship a fix — an unverified webhook endpoint can be spoofed to
       mark arbitrary orders paid."
+
+    P1 fix #13: catches specific exceptions, not bare Exception.
     """
     payload = request.body
     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE", "")
 
     # Step 1: Verify webhook signature
+    # P1 fix #13 — catch specific Stripe exceptions, not bare Exception.
+    # Stripe raises SignatureVerificationError for bad signatures;
+    # ValueError covers malformed JSON in the payload (rare but possible).
     try:
         event = verify_webhook_signature(payload, sig_header)
-    except Exception as e:
+    except stripe.error.SignatureVerificationError as e:
         logger.warning("Stripe webhook signature verification failed: %s", e)
         return Response(
             {"error": "Firma webhook non valida."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except ValueError as e:
+        # Malformed JSON payload — Stripe's construct_event raises ValueError
+        logger.warning("Stripe webhook payload parsing failed: %s", e)
+        return Response(
+            {"error": "Payload webhook non valido."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

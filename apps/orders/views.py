@@ -2,9 +2,19 @@
 GLORYBELLE — Order Views.
 
 Thin HTTP adapter — all logic in services.py (rule.md).
+
+P1 fix #9: OrderHistoryView now annotates item_count via Count("items") instead
+of calling obj.items.count() per row (which fires a COUNT query per order,
+triggering N+1 on /api/orders/).
+
+P1 fix #8: CheckoutView now accepts an optional client-supplied idempotency_key
+(UUID per checkout attempt). If provided, it's used as the Order.idempotency_key
+AND passed to Stripe as the PaymentIntent idempotency_key. Retries with the same
+key return the original order instead of creating a duplicate.
 """
 import logging
 
+from django.db.models import Count
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -30,6 +40,11 @@ class CheckoutView(APIView):
     Per architecture.md §1.3:
       Browser → POST /api/checkout/ → Django creates Order (pending)
       + Stripe PaymentIntent → returns client_secret
+
+    Idempotency (P1 fix #8):
+      Client sends an `idempotency_key` UUID in the request body (one per
+      checkout attempt). The same key on a retried request returns the
+      original order — no duplicate charge, no duplicate PaymentIntent.
     """
 
     permission_classes = [AllowAny]
@@ -38,6 +53,28 @@ class CheckoutView(APIView):
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        # Idempotency: if the client sent a key and an Order already exists
+        # with that key, return the existing order instead of creating a new one.
+        idempotency_key = data.get("idempotency_key")
+        if idempotency_key:
+            existing = Order.objects.filter(idempotency_key=idempotency_key).first()
+            if existing:
+                # Return the existing order + a fresh client_secret (the
+                # PaymentIntent still exists on Stripe's side; we just need
+                # to give the client a secret to retry confirmation).
+                # Note: create_payment_intent is itself idempotent (same order
+                # → same PaymentIntent via stripe_client.py's deterministic key).
+                client_secret, _ = create_payment_intent(existing)
+                return Response(
+                    {
+                        "order": OrderSerializer(existing).data,
+                        "client_secret": client_secret,
+                        "payment_intent_id": existing.stripe_payment_intent_id,
+                        "idempotent_replay": True,
+                    },
+                    status=status.HTTP_200_OK,
+                )
 
         cart = _get_cart(request)
 
@@ -55,10 +92,11 @@ class CheckoutView(APIView):
             billing_same_as_shipping=data.get("billing_same_as_shipping", True),
             user=user,
             notes=data.get("notes", ""),
+            idempotency_key=idempotency_key,
         )
 
-        # Create Stripe PaymentIntent
-        # Per rule.md: never create a PaymentIntent without an idempotency key
+        # Create Stripe PaymentIntent — uses order.order_number as the Stripe
+        # idempotency key (P0 fix #1, deterministic).
         client_secret, payment_intent_id = create_payment_intent(order)
 
         # Store the PaymentIntent ID on the order
@@ -80,6 +118,10 @@ class OrderHistoryView(generics.ListAPIView):
     GET /api/orders/
 
     List the authenticated user's orders, most recent first.
+
+    P1 fix #9: annotate(Count("items")) eliminates the N+1 query that
+    OrderListSerializer.get_item_count was triggering via obj.items.count()
+    per row. Now the COUNT is done in a single SQL query.
     """
 
     serializer_class = OrderListSerializer
@@ -88,6 +130,7 @@ class OrderHistoryView(generics.ListAPIView):
     def get_queryset(self):
         return (
             Order.objects.filter(user=self.request.user)
+            .annotate(item_count_annotated=Count("items"))
             .prefetch_related("items")
             .order_by("-created_at")
         )

@@ -6,7 +6,13 @@ Per roadmap Day 6: "snapshots line items (price/name at time of purchase,
 so later catalog edits never retroactively change a past order)."
 Per PRD §3.2: guest checkout supported (Order can exist without a user).
 Per rule.md: never delete a ProductVariant referenced by an existing order (PROTECT).
+
+P1 fix #8: idempotency_key field added per backend-design PDF §6.3 — was on Payment
+only, now also on Order. The unique constraint + index ensures safe retries at the
+database level (same key = same order, no duplicate creation).
 """
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -35,6 +41,23 @@ class Order(models.Model):
         max_length=30,
         unique=True,
         db_index=True,
+    )
+    # P1 fix #8 — backend-design PDF §6.3
+    # Idempotency key generated client-side (UUID per checkout attempt) and passed
+    # both to Order creation AND to Stripe.PaymentIntent.create(idempotency_key=...).
+    # The same key on a retried request returns the original Order instead of
+    # creating a duplicate — protection at the database level (unique constraint).
+    idempotency_key = models.CharField(
+        "Chiave idempotenza",
+        max_length=64,
+        unique=True,
+        db_index=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text=(
+            "UUID generato lato client per ogni tentativo di checkout. "
+            "Retries con la stessa chiave restituiscono lo stesso ordine."
+        ),
     )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

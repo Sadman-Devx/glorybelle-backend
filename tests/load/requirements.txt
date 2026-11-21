@@ -1,0 +1,3 @@
+# Locust — load testing framework
+# Used by tests/load/locustfile.py for PRD §3.9 (~5,000 concurrent users) verification
+locust>=2.31,<3.0

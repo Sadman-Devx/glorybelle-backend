@@ -11,6 +11,11 @@ Per rule.md:
 Per roadmap Day 6:
   - create_order_from_cart() snapshots line items at time of purchase
   - Checkout endpoint creates Order (status=pending)
+
+P1 fix #8: create_order_from_cart now accepts an optional idempotency_key.
+If provided, it's set on the Order; the unique constraint protects against
+duplicate creation if the same key is used twice (the CheckoutView checks
+first and returns the existing order, so this is a defense-in-depth).
 """
 import logging
 import random
@@ -68,6 +73,7 @@ def create_order_from_cart(
     billing_same_as_shipping=True,
     user=None,
     notes="",
+    idempotency_key=None,
 ):
     """
     Create an Order from a Cart, snapshotting all line items.
@@ -86,6 +92,9 @@ def create_order_from_cart(
         billing_same_as_shipping: If True, copy shipping to billing
         user: User instance (None for guest checkout)
         notes: Optional customer notes
+        idempotency_key: Optional UUID per checkout attempt (P1 fix #8).
+            If provided, set on the Order. Defense-in-depth against duplicate
+            creation — CheckoutView checks first and returns existing order.
 
     Returns:
         Order instance with status=pending
@@ -117,7 +126,12 @@ def create_order_from_cart(
 
     # Resolve shipping address
     if shipping_address_id and user:
-        shipping_addr = Address.objects.get(id=shipping_address_id, user=user)
+        try:
+            shipping_addr = Address.objects.get(id=shipping_address_id, user=user)
+        except Address.DoesNotExist:
+            raise ValueError(
+                f"Indirizzo di spedizione {shipping_address_id} non trovato."
+            )
         shipping = _snapshot_address(shipping_addr)
     elif shipping_address_data:
         shipping = shipping_address_data
@@ -128,7 +142,12 @@ def create_order_from_cart(
     if billing_same_as_shipping:
         billing = shipping
     elif billing_address_id and user:
-        billing_addr = Address.objects.get(id=billing_address_id, user=user)
+        try:
+            billing_addr = Address.objects.get(id=billing_address_id, user=user)
+        except Address.DoesNotExist:
+            raise ValueError(
+                f"Indirizzo di fatturazione {billing_address_id} non trovato."
+            )
         billing = _snapshot_address(billing_addr)
     elif billing_address_data:
         billing = billing_address_data
@@ -163,7 +182,7 @@ def create_order_from_cart(
         total = subtotal + shipping_cost
 
         # Create Order
-        order = Order.objects.create(
+        order_kwargs = dict(
             order_number=generate_order_number(),
             user=user if user and user.is_authenticated else None,
             email=email,
@@ -192,6 +211,12 @@ def create_order_from_cart(
             total=total,
             notes=notes,
         )
+
+        # P1 fix #8 — set idempotency_key if provided (otherwise default UUID kicks in)
+        if idempotency_key:
+            order_kwargs["idempotency_key"] = str(idempotency_key)
+
+        order = Order.objects.create(**order_kwargs)
 
         # Create OrderItems — snapshot data frozen at purchase time
         for item_data in order_items_data:

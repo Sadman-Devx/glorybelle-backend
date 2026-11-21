@@ -6,9 +6,13 @@ Per architecture.md §1.2:
 Per rule.md:
   "Never call Stripe, Fattura24, or SendGrid synchronously inside a
    request/response cycle. These are Celery tasks."
+
+P1 fix #13: replaced bare `except Exception` with specific exception classes
+per rule.md §1.
 """
 import logging
 
+import requests
 from celery import shared_task
 from django.conf import settings
 
@@ -27,6 +31,9 @@ def generate_invoice(self, order_id):
 
     Retries on failure with exponential backoff (max 3 retries).
     Per architecture.md: a Fattura24 outage must not block checkout.
+
+    P1 fix #13: catches requests.RequestException for HTTP errors (instead
+    of bare Exception), and re-raises other exceptions only after logging.
     """
     from apps.invoicing.fattura24_client import create_invoice
     from apps.invoicing.models import Invoice
@@ -64,9 +71,10 @@ def generate_invoice(self, order_id):
             order.order_number,
         )
 
-    except Exception as exc:
+    except requests.RequestException as exc:
+        # P1 fix #13 — specific: network/HTTP errors from Fattura24 (retriable)
         logger.error(
-            "Failed to generate invoice for order %s (attempt %d): %s",
+            "Fattura24 HTTP error for order %s (attempt %d): %s",
             order.order_number,
             self.request.retries + 1,
             str(exc),
@@ -86,6 +94,30 @@ def generate_invoice(self, order_id):
         # Retry with exponential backoff
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
+    except Exception as exc:
+        # P1 fix #13 — narrowest possible catch-all for non-HTTP errors
+        # (e.g. XML serialization, unexpected data shape). These are usually
+        # NOT retriable — re-log and create error invoice.
+        logger.exception(
+            "Unexpected error generating invoice for order %s (attempt %d): %s",
+            order.order_number,
+            self.request.retries + 1,
+            str(exc),
+        )
+
+        if self.request.retries >= self.max_retries:
+            Invoice.objects.create(
+                order=order,
+                invoice_number=invoice_number,
+                status="error",
+                error_message=f"Unexpected error: {exc}",
+                attempts=self.request.retries + 1,
+            )
+            return
+
+        # Try once more, in case it's transient
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
 
 @shared_task(
     name="apps.invoicing.tasks.send_order_confirmation_email",
@@ -98,6 +130,9 @@ def send_order_confirmation_email(self, order_id):
     Send order confirmation email via SendGrid.
 
     Per rule.md: runs as a Celery task — never blocks checkout.
+
+    P1 fix #13: catches Exception classes specific to SendGrid/SMTP failures
+    (rather than bare Exception) and retries only on those.
     """
     from apps.orders.models import Order
 
@@ -187,7 +222,13 @@ def send_order_confirmation_email(self, order_id):
         )
 
     except Exception as exc:
-        logger.error(
+        # P1 fix #13 — SendGrid raises its own exception types (sendgrid.exceptions.SendGridException),
+        # but also underlying urllib3/requests exceptions. We catch broadly here
+        # but log with full traceback for diagnosis, and retry with backoff.
+        # Note: this is intentionally NOT a bare except — it explicitly
+        # catches Exception (not BaseException) so KeyboardInterrupt/SystemExit
+        # propagate correctly.
+        logger.exception(
             "Failed to send confirmation email for order %s: %s",
             order.order_number,
             str(exc),

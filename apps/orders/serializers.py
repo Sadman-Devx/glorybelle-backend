@@ -1,5 +1,9 @@
 """
 GLORYBELLE — Order Serializers.
+
+P1 fix #9: OrderListSerializer.get_item_count now reads the annotated
+`item_count_annotated` field from the queryset (set in OrderHistoryView)
+instead of calling obj.items.count() per row — eliminates N+1 on /api/orders/.
 """
 from rest_framework import serializers
 
@@ -38,6 +42,7 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "order_number",
+            "idempotency_key",  # P1 fix #8 — expose so the client can replay
             "email",
             "status",
             "status_display",
@@ -72,7 +77,13 @@ class OrderSerializer(serializers.ModelSerializer):
 
 
 class OrderListSerializer(serializers.ModelSerializer):
-    """Lightweight order list for order history."""
+    """Lightweight order list for order history.
+
+    P1 fix #9: get_item_count prefers the annotated value
+    (item_count_annotated from the queryset) when present, falling back
+    to obj.items.count() only as a safety net for callers that bypass
+    OrderHistoryView.
+    """
 
     status_display = serializers.CharField(
         source="get_status_display", read_only=True
@@ -93,6 +104,11 @@ class OrderListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_item_count(self, obj):
+        # P1 fix #9 — prefer the annotated value (no extra query)
+        annotated = getattr(obj, "item_count_annotated", None)
+        if annotated is not None:
+            return annotated
+        # Safety net — fallback for direct serializer usage outside the view
         return obj.items.count()
 
 
@@ -102,10 +118,17 @@ class CheckoutSerializer(serializers.Serializer):
 
     Supports both saved address (by ID) and inline address data.
     Per PRD §3.2: guest checkout requires email but no account.
+
+    P1 fix #8: optional idempotency_key (UUID per checkout attempt) —
+    retried requests with the same key return the original order.
     """
 
     email = serializers.EmailField()
     notes = serializers.CharField(required=False, default="", allow_blank=True)
+
+    # Idempotency — UUID per checkout attempt. Frontend generates it on first
+    # submit and reuses it on retries (network timeout, double-click).
+    idempotency_key = serializers.UUIDField(required=False)
 
     # Shipping — either an ID or inline data
     shipping_address_id = serializers.IntegerField(required=False)

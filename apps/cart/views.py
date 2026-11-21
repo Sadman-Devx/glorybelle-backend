@@ -3,6 +3,8 @@ GLORYBELLE — Cart Views.
 
 Thin HTTP adapter — all logic in services.py (rule.md).
 Supports both authenticated users and guest sessions.
+
+P1 fix #10: adds DELETE /api/cart/ (clear entire cart) endpoint.
 """
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -30,7 +32,8 @@ def _get_cart(request):
 
 class CartView(APIView):
     """
-    GET /api/cart/ → current cart with items
+    GET    /api/cart/  → current cart with items
+    DELETE /api/cart/  → clear the whole cart (P1 fix #10)
     """
 
     permission_classes = [AllowAny]
@@ -39,6 +42,16 @@ class CartView(APIView):
         cart = _get_cart(request)
         serializer = CartSerializer(cart, context={"request": request})
         return Response(serializer.data)
+
+    def delete(self, request):
+        """Clear the entire cart — remove all items + release all reservations."""
+        cart = _get_cart(request)
+        services.clear_cart(cart=cart)
+        cart.refresh_from_db()
+        return Response(
+            CartSerializer(cart, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 class CartItemView(APIView):
@@ -101,6 +114,8 @@ class CartMergeView(APIView):
     """
     POST /api/cart/merge/ → merge guest cart into user cart on login.
     """
+
+    permission_classes = [AllowAny]
 
     def post(self, request):
         session_key = request.data.get("session_key")

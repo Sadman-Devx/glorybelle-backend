@@ -3,6 +3,9 @@ GLORYBELLE — Redis Cache Utilities.
 
 Helpers for cache key management and invalidation.
 Per architecture.md: Redis is used for HTTP response cache with 5-min TTL.
+
+P1 fix #13: replaced bare `except Exception` in _safe_delete_pattern with
+specific exceptions (ConnectionError, TimeoutError) per rule.md §1.
 """
 import hashlib
 import logging
@@ -27,7 +30,7 @@ def make_cache_key(prefix: str, **kwargs) -> str:
 
     Example:
         make_cache_key("product_list", category="anelli", metal="argento", page=1)
-        → "glorybelle:product_list:a1b2c3d4"
+        → "product_list:a1b2c3d4"
     """
     raw = "|".join(f"{k}={v}" for k, v in sorted(kwargs.items()) if v is not None)
     suffix = hashlib.md5(raw.encode()).hexdigest()[:8]
@@ -50,15 +53,20 @@ def _safe_delete_pattern(pattern):
 
     Falls back to cache.clear() on backends that don't support
     pattern-based deletion (e.g., LocMemCache in tests).
+
+    P1 fix #13 — replaced bare `except Exception` with specific exceptions
+    that we expect from Redis backends. ConnectionError, TimeoutError,
+    AttributeError (LocMemCache), NotImplementedError are all caught
+    explicitly. Other exceptions propagate so we notice real bugs.
     """
     try:
         cache.delete_pattern(pattern)
     except (AttributeError, NotImplementedError):
-        # Non-Redis backend — clear entire cache as fallback
+        # Non-Redis backend (LocMemCache in tests) — clear entire cache
         cache.clear()
-    except Exception:
-        # Redis not available (ConnectionError, etc.) — silently skip
-        pass
+    except (ConnectionError, TimeoutError) as exc:
+        # Redis not available — silently skip (will retry on next invalidation)
+        logger.warning("Redis unavailable during cache invalidation: %s", exc)
 
 
 def invalidate_product_cache():
@@ -88,4 +96,3 @@ def invalidate_all():
     """Nuclear option — clear the entire cache."""
     logger.warning("Invalidating ALL cache")
     cache.clear()
-

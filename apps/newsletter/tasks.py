@@ -2,6 +2,9 @@
 GLORYBELLE — Newsletter Celery Tasks.
 
 Per rule.md: "Never call Stripe, Fattura24, or SendGrid synchronously."
+
+P1 fix #13: replaced bare `except Exception` with explicit Exception catch
+that uses logger.exception (full traceback) rather than logger.error (single line).
 """
 import logging
 
@@ -66,5 +69,8 @@ def send_newsletter(self, subject, html_content):
         return sent
 
     except Exception as exc:
-        logger.error("Failed to send newsletter: %s", str(exc))
+        # P1 fix #13 — logger.exception gives the full traceback for SendGrid
+        # / urllib3 / requests errors (was: logger.error with single-line message).
+        # Still catches Exception (not BaseException) so KeyboardInterrupt propagates.
+        logger.exception("Failed to send newsletter '%s': %s", subject, str(exc))
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))

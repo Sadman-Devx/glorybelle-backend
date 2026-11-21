@@ -1,5 +1,18 @@
 version: "3.9"
 
+# =============================================================================
+# GLORYBELLE — Backend Docker Compose
+#
+# P1 fix #11 — full stack: Postgres + Redis + Django + Celery worker + Celery beat.
+# Architecture.md §1.1 demands a stateless Django app + Celery workers for async
+# tasks (email, invoicing, stock reservation cleanup).
+#
+# Usage:
+#   docker compose up -d         # start all services
+#   docker compose logs -f app   # tail Django logs
+#   docker compose exec app python manage.py createsuperuser
+# =============================================================================
+
 services:
   db:
     image: postgres:16-alpine
@@ -29,5 +42,75 @@ services:
       timeout: 5s
       retries: 5
 
+  # Django app — serves API + admin
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://glorybelle:glorybelle@db:5432/glorybelle
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount media files so uploaded images persist across container restarts
+      - media_files:/app/media
+      # Mount static so admin CSS/JS survive container rebuilds
+      - static_files:/app/staticfiles
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/api/schema/').status == 200 else sys.exit(1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Celery worker — runs async tasks (email, invoicing, stock cleanup)
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://glorybelle:glorybelle@db:5432/glorybelle
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    command: celery -A config worker -l info --concurrency=2
+    # No ports — worker doesn't serve HTTP
+
+  # Celery beat — schedules periodic tasks (release_expired_reservations every 60s)
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://glorybelle:glorybelle@db:5432/glorybelle
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A config beat -l info
+    # No ports — beat doesn't serve HTTP
+
 volumes:
   postgres_data:
+  media_files:
+  static_files:

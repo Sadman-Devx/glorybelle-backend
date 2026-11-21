@@ -2,12 +2,16 @@
 # GLORYBELLE — Base Dependencies
 # =============================================================================
 
-Django>=5.1,<5.2
+# P0 fix #6 — pinned to 5.1.15 (matches existing migrations)
+Django==5.1.15
 djangorestframework>=3.15,<4.0
 djangorestframework-simplejwt>=5.3,<6.0
 drf-spectacular>=0.27,<1.0
 django-filter>=24.0,<25.0
 django-cors-headers>=4.4,<5.0
+
+# P1 fix #12 — branded admin (replaces raw Django admin per roadmap Day 9)
+django-unfold>=0.40,<1.0
 
 # Database
 psycopg2-binary>=2.9.9,<3.0
@@ -33,3 +37,6 @@ stripe>=10.0,<11.0
 
 # Email
 sendgrid>=6.11,<7.0
+
+# P1 fix #15 — Fattura24 HTTP integration needs requests
+requests>=2.32,<3.0
