@@ -6,6 +6,7 @@ Per PRD §3.4: Customer reviews, moderated before publish.
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class Review(models.Model):
@@ -21,38 +22,38 @@ class Review(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="reviews",
-        verbose_name="Utente",
+        verbose_name=_("Utente"),
     )
     product = models.ForeignKey(
         "catalog.Product",
         on_delete=models.CASCADE,
         related_name="reviews",
-        verbose_name="Prodotto",
+        verbose_name=_("Prodotto"),
     )
     rating = models.PositiveSmallIntegerField(
-        "Valutazione",
+        _("Valutazione"),
         validators=[MinValueValidator(1), MaxValueValidator(5)],
-        help_text="Da 1 a 5 stelle.",
+        help_text=_("Da 1 a 5 stelle."),
     )
     title = models.CharField(
-        "Titolo",
+        _("Titolo"),
         max_length=200,
     )
     body = models.TextField(
-        "Testo",
+        _("Testo"),
     )
     is_approved = models.BooleanField(
-        "Approvata",
+        _("Approvata"),
         default=False,
         db_index=True,
-        help_text="Le recensioni devono essere approvate prima di essere pubblicate.",
+        help_text=_("Le recensioni devono essere approvate prima di essere pubblicate."),
     )
-    created_at = models.DateTimeField("Creata il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornata il", auto_now=True)
+    created_at = models.DateTimeField(_("Creata il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornata il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Recensione"
-        verbose_name_plural = "Recensioni"
+        verbose_name = _("Recensione")
+        verbose_name_plural = _("Recensioni")
         unique_together = [("user", "product")]
         ordering = ["-created_at"]
 

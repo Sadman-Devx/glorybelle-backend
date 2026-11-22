@@ -94,7 +94,10 @@ class TestOrderCreation:
         # Verify totals are server-calculated
         expected_subtotal = Decimal("149.00") * 2 + Decimal("99.00") * 1
         assert order.subtotal == expected_subtotal
-        assert order.total == expected_subtotal  # free shipping
+        expected_discount = (expected_subtotal * Decimal("0.10")).quantize(Decimal("0.01"))
+        assert order.discount_percent == Decimal("10.00")
+        assert order.discount_amount == expected_discount
+        assert order.total == expected_subtotal - expected_discount  # free shipping
 
     def test_order_snapshots_product_data(
         self, cart_with_items, user, shipping_address_data, variant

@@ -8,6 +8,7 @@ Per PRD §3.3: persistent cart (guest session + logged-in, merged on login).
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import ProductVariant
 
@@ -27,22 +28,22 @@ class Cart(models.Model):
         null=True,
         blank=True,
         related_name="carts",
-        verbose_name="Utente",
+        verbose_name=_("Utente"),
     )
     session_key = models.CharField(
-        "Chiave sessione",
+        _("Chiave sessione"),
         max_length=40,
         null=True,
         blank=True,
         db_index=True,
-        help_text="Per carrelli di utenti non registrati.",
+        help_text=_("Per carrelli di utenti non registrati."),
     )
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Carrello"
-        verbose_name_plural = "Carrelli"
+        verbose_name = _("Carrello")
+        verbose_name_plural = _("Carrelli")
 
     def __str__(self):
         if self.user:
@@ -71,21 +72,21 @@ class CartItem(models.Model):
         Cart,
         on_delete=models.CASCADE,
         related_name="items",
-        verbose_name="Carrello",
+        verbose_name=_("Carrello"),
     )
     variant = models.ForeignKey(
         ProductVariant,
         on_delete=models.PROTECT,
         related_name="cart_items",
-        verbose_name="Variante",
+        verbose_name=_("Variante"),
     )
-    quantity = models.PositiveIntegerField("Quantità", default=1)
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    quantity = models.PositiveIntegerField(_("Quantità"), default=1)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Articolo nel carrello"
-        verbose_name_plural = "Articoli nel carrello"
+        verbose_name = _("Articolo nel carrello")
+        verbose_name_plural = _("Articoli nel carrello")
         unique_together = [("cart", "variant")]
 
     def __str__(self):
@@ -111,22 +112,22 @@ class StockReservation(models.Model):
         CartItem,
         on_delete=models.CASCADE,
         related_name="reservations",
-        verbose_name="Articolo carrello",
+        verbose_name=_("Articolo carrello"),
     )
     variant = models.ForeignKey(
         ProductVariant,
         on_delete=models.CASCADE,
         related_name="reservations",
-        verbose_name="Variante",
+        verbose_name=_("Variante"),
     )
-    quantity = models.PositiveIntegerField("Quantità riservata")
-    expires_at = models.DateTimeField("Scade il", db_index=True)
-    is_active = models.BooleanField("Attiva", default=True, db_index=True)
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
+    quantity = models.PositiveIntegerField(_("Quantità riservata"))
+    expires_at = models.DateTimeField(_("Scade il"), db_index=True)
+    is_active = models.BooleanField(_("Attiva"), default=True, db_index=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
 
     class Meta:
-        verbose_name = "Riserva stock"
-        verbose_name_plural = "Riserve stock"
+        verbose_name = _("Riserva stock")
+        verbose_name_plural = _("Riserve stock")
         indexes = [
             models.Index(fields=["is_active", "expires_at"]),
         ]

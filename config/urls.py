@@ -14,6 +14,8 @@ from core.health import health
 urlpatterns = [
     # Healthcheck (Docker / load balancer)
     path("health/", health, name="health"),
+    # Admin language switcher
+    path("i18n/", include("django.conf.urls.i18n")),
     # Admin
     path("admin/", admin.site.urls),
     # API — each app registers its own routes

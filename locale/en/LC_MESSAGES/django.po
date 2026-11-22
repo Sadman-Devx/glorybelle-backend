@@ -1,0 +1,557 @@
+msgid ""
+msgstr ""
+"Language: en\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Accettata"
+msgstr "Accepted"
+
+msgid "Account"
+msgstr "Accounts"
+
+msgid "Aggiornata il"
+msgstr "Updated at"
+
+msgid "Aggiornato il"
+msgstr "Updated at"
+
+msgid "Aggiunto il"
+msgstr "Added at"
+
+msgid "Ametista"
+msgstr "Amethyst"
+
+msgid "Annullato"
+msgstr "Canceled"
+
+msgid "Anteprima"
+msgstr "Preview"
+
+msgid "Approva le recensioni selezionate"
+msgstr "Approve selected reviews"
+
+msgid "Approvata"
+msgstr "Approved"
+
+msgid "Argento 925"
+msgstr "Sterling silver 925"
+
+msgid "Articoli"
+msgstr "Items"
+
+msgid "Articoli lista desideri"
+msgstr "Wishlist items"
+
+msgid "Articoli nel carrello"
+msgstr "Cart items"
+
+msgid "Articoli ordine"
+msgstr "Order items"
+
+msgid "Articolo lista desideri"
+msgstr "Wishlist item"
+
+msgid "Articolo nel carrello"
+msgstr "Cart item"
+
+msgid "Articolo carrello"
+msgstr "Cart item"
+
+msgid "Articolo ordine"
+msgstr "Order item"
+
+msgid "Attiva"
+msgstr "Active"
+
+msgid "Attivo"
+msgstr "Active"
+
+msgid "CAP"
+msgstr "Postal code"
+
+msgid "CAP fatturazione"
+msgstr "Billing postal code"
+
+msgid "CAP spedizione"
+msgstr "Shipping postal code"
+
+msgid "Carrelli"
+msgstr "Carts"
+
+msgid "Carrello"
+msgstr "Cart"
+
+msgid "Catalogo"
+msgstr "Catalog"
+
+msgid "Categoria"
+msgstr "Category"
+
+msgid "Categoria padre"
+msgstr "Parent category"
+
+msgid "Categorie"
+msgstr "Categories"
+
+msgid "Chiave idempotenza"
+msgstr "Idempotency key"
+
+msgid "Chiave sessione"
+msgstr "Session key"
+
+msgid "Chiave usata per creare il PaymentIntent su Stripe."
+msgstr "Key used to create the PaymentIntent on Stripe."
+
+msgid "Città"
+msgstr "City"
+
+msgid "Città fatturazione"
+msgstr "Billing city"
+
+msgid "Città spedizione"
+msgstr "Shipping city"
+
+msgid "Cognome"
+msgstr "Last name"
+
+msgid "Cognome fatturazione"
+msgstr "Billing last name"
+
+msgid "Cognome spedizione"
+msgstr "Shipping last name"
+
+msgid "Consegnato"
+msgstr "Delivered"
+
+msgid "Contenuto XML"
+msgstr "XML content"
+
+msgid "Costo spedizione"
+msgstr "Shipping cost"
+
+msgid "Creata il"
+msgstr "Created at"
+
+msgid "Creato il"
+msgstr "Created at"
+
+msgid "Da 1 a 5 stelle."
+msgstr "From 1 to 5 stars."
+
+msgid "Data di nascita"
+msgstr "Date of birth"
+
+msgid "Descrizione"
+msgstr "Description"
+
+msgid "Descrizione per accessibilità."
+msgstr "Accessibility description."
+
+msgid "Diamante"
+msgstr "Diamond"
+
+msgid "Disattivato quando l'utente annulla l'iscrizione."
+msgstr "Disabled when the user unsubscribes."
+
+msgid "Disiscritto il"
+msgstr "Unsubscribed at"
+
+msgid "Elaborato il"
+msgstr "Processed at"
+
+msgid "Email"
+msgstr "Email"
+
+msgid "Errore"
+msgstr "Error"
+
+msgid "Es. +39 02 1234567"
+msgstr "e.g. +39 02 1234567"
+
+msgid "Es. 18K, 925, etc."
+msgstr "e.g. 18K, 925, etc."
+
+msgid "Es. 50, 52, 54 per anelli; Unica per collane."
+msgstr "e.g. 50, 52, 54 for rings; One size for necklaces."
+
+msgid "Es. payment_intent.succeeded"
+msgstr "e.g. payment_intent.succeeded"
+
+msgid "Eventi webhook elaborati"
+msgstr "Processed webhook events"
+
+msgid "Evento webhook elaborato"
+msgstr "Processed webhook event"
+
+msgid "Fallito"
+msgstr "Failed"
+
+msgid "Fattura"
+msgstr "Invoice"
+
+msgid "Fattura24 ID"
+msgstr "Fattura24 ID"
+
+msgid "Fatturazione"
+msgstr "Billing"
+
+msgid "Fatture"
+msgstr "Invoices"
+
+msgid "Foto"
+msgstr "Photo"
+
+msgid "Foto principale (1:1, soggetto centrato)."
+msgstr "Main photo (1:1, subject centered)."
+
+msgid "ID esterno assegnato da Fattura24."
+msgstr "External ID assigned by Fattura24."
+
+msgid "Immagine"
+msgstr "Image"
+
+msgid "Immagine alternativa (hover)"
+msgstr "Alternate image (hover)"
+
+msgid "Immagine principale"
+msgstr "Primary image"
+
+msgid "Immagine prodotto"
+msgstr "Product image"
+
+msgid "Immagini prodotto"
+msgstr "Product images"
+
+msgid "Importo"
+msgstr "Amount"
+
+msgid "Importo dello sconto in euro."
+msgstr "Discount amount in euros."
+
+msgid "Importo sconto"
+msgstr "Discount amount"
+
+msgid "In attesa"
+msgstr "Pending"
+
+msgid "In attesa di pagamento"
+msgstr "Awaiting payment"
+
+msgid "In evidenza"
+msgstr "Featured"
+
+msgid "In lavorazione"
+msgstr "Processing"
+
+msgid "Indirizzi"
+msgstr "Addresses"
+
+msgid "Indirizzo"
+msgstr "Address"
+
+msgid "Indirizzo fatturazione 1"
+msgstr "Billing address line 1"
+
+msgid "Indirizzo fatturazione 2"
+msgstr "Billing address line 2"
+
+msgid "Indirizzo predefinito"
+msgstr "Default address"
+
+msgid "Indirizzo riga 1"
+msgstr "Address line 1"
+
+msgid "Indirizzo riga 2"
+msgstr "Address line 2"
+
+msgid "Indirizzo spedizione 1"
+msgstr "Shipping address line 1"
+
+msgid "Indirizzo spedizione 2"
+msgstr "Shipping address line 2"
+
+msgid "Inviata"
+msgstr "Submitted"
+
+msgid "Iscritti newsletter"
+msgstr "Newsletter subscribers"
+
+msgid "Iscritto il"
+msgstr "Subscribed at"
+
+msgid "Iscritto newsletter"
+msgstr "Newsletter subscriber"
+
+msgid "Le recensioni devono essere approvate prima di essere pubblicate."
+msgstr "Reviews must be approved before they are published."
+
+msgid "Link al PDF generato della fattura."
+msgstr "Link to the generated invoice PDF."
+
+msgid "Lista desideri"
+msgstr "Wishlist"
+
+msgid "Liste desideri"
+msgstr "Wishlists"
+
+msgid "Messaggio di errore"
+msgstr "Error message"
+
+msgid "Metallo"
+msgstr "Metal"
+
+msgid "Metallo (display)"
+msgstr "Metal (display)"
+
+msgid "Metallo predefinito"
+msgstr "Default metal"
+
+msgid "Misura"
+msgstr "Size"
+
+msgid "Nessuna"
+msgstr "None"
+
+msgid "Newsletter"
+msgstr "Newsletter"
+
+msgid "Nome"
+msgstr "Name"
+
+msgid "Nome fatturazione"
+msgstr "Billing first name"
+
+msgid "Nome prodotto"
+msgstr "Product name"
+
+msgid "Nome spedizione"
+msgstr "Shipping first name"
+
+msgid "Note del cliente"
+msgstr "Customer notes"
+
+msgid "Numero di tentativi di invio."
+msgstr "Number of submission attempts."
+
+msgid "Numero fattura"
+msgstr "Invoice number"
+
+msgid "Numero ordine"
+msgstr "Order number"
+
+msgid "Ordine"
+msgstr "Order"
+
+msgid "Ordini"
+msgstr "Orders"
+
+msgid "Oro 18K"
+msgstr "18K gold"
+
+msgid "Oro Rosa"
+msgstr "Rose gold"
+
+msgid "Paese"
+msgstr "Country"
+
+msgid "Paese fatturazione"
+msgstr "Billing country"
+
+msgid "Paese spedizione"
+msgstr "Shipping country"
+
+msgid "Pagamenti"
+msgstr "Payments"
+
+msgid "Pagamento"
+msgstr "Payment"
+
+msgid "Pagato"
+msgstr "Paid"
+
+msgid "Per carrelli di utenti non registrati."
+msgstr "For carts belonging to guest users."
+
+msgid "Percentuale di sconto applicata (es. 10.00 per 10%)."
+msgstr "Discount percentage applied (e.g. 10.00 for 10%)."
+
+msgid "Percentuale sconto"
+msgstr "Discount percentage"
+
+msgid "Pietra"
+msgstr "Gemstone"
+
+msgid "Prezzo base"
+msgstr "Base price"
+
+msgid "Prezzo di listino in EUR. Le varianti possono sovrascriverlo."
+msgstr "List price in EUR. Variants can override it."
+
+msgid "Prezzo personalizzato"
+msgstr "Custom price"
+
+msgid "Prezzo unitario"
+msgstr "Unit price"
+
+msgid "Prodotti"
+msgstr "Products"
+
+msgid "Prodotto"
+msgstr "Product"
+
+msgid "Profili clienti"
+msgstr "Customer profiles"
+
+msgid "Profilo"
+msgstr "Profile"
+
+msgid "Profilo cliente"
+msgstr "Customer profile"
+
+msgid "Provincia"
+msgstr "Province"
+
+msgid "Provincia fatturazione"
+msgstr "Billing province"
+
+msgid "Provincia spedizione"
+msgstr "Shipping province"
+
+msgid "Purezza"
+msgstr "Purity"
+
+msgid "Quantità"
+msgstr "Quantity"
+
+msgid "Quantità in stock"
+msgstr "Stock quantity"
+
+msgid "Quantità riservata"
+msgstr "Reserved quantity"
+
+msgid "Recensione"
+msgstr "Review"
+
+msgid "Recensioni"
+msgstr "Reviews"
+
+msgid "Rifiuta le recensioni selezionate"
+msgstr "Reject selected reviews"
+
+msgid "Rifiutata"
+msgstr "Rejected"
+
+msgid "Rimborsato"
+msgstr "Refunded"
+
+msgid "Riserva stock"
+msgstr "Stock reservation"
+
+msgid "Riserve stock"
+msgstr "Stock reservations"
+
+msgid "Riuscito"
+msgstr "Succeeded"
+
+msgid "Rubino"
+msgstr "Ruby"
+
+msgid "SKU"
+msgstr "SKU"
+
+msgid "Scade il"
+msgstr "Expires at"
+
+msgid "Scaduta"
+msgstr "Expired"
+
+msgid "Se impostato, sovrascrive il prezzo base del prodotto."
+msgstr "If set, overrides the product base price."
+
+msgid "Seconda foto per hover-swap (stesso formato 1:1)."
+msgstr "Second photo for hover swap (same 1:1 format)."
+
+msgid "Sigla provincia (es. MI, RM, TO)"
+msgstr "Province abbreviation (e.g. MI, RM, TO)"
+
+msgid "Slug"
+msgstr "Slug"
+
+msgid "Smeraldo"
+msgstr "Emerald"
+
+msgid "Spedito"
+msgstr "Shipped"
+
+msgid "Spedizione"
+msgstr "Shipping"
+
+msgid "Stato"
+msgstr "Status"
+
+msgid "Stripe Charge ID"
+msgstr "Stripe Charge ID"
+
+msgid "Stripe Event ID"
+msgstr "Stripe Event ID"
+
+msgid "Stripe PaymentIntent ID"
+msgstr "Stripe PaymentIntent ID"
+
+msgid "Stock riservato da carrelli attivi (gestito da cart/services.py)."
+msgstr "Stock reserved by active carts (managed by cart/services.py)."
+
+msgid "Subtotale"
+msgstr "Subtotal"
+
+msgid "Telefono"
+msgstr "Phone"
+
+msgid "Tentativi"
+msgstr "Attempts"
+
+msgid "Testo"
+msgstr "Text"
+
+msgid "Testo alternativo"
+msgstr "Alt text"
+
+msgid "Tipo evento"
+msgstr "Event type"
+
+msgid "Titolo"
+msgstr "Title"
+
+msgid "Totale"
+msgstr "Total"
+
+msgid "Totale riga"
+msgstr "Line total"
+
+msgid "Totali"
+msgstr "Totals"
+
+msgid "URL PDF"
+msgstr "PDF URL"
+
+msgid "Utente"
+msgstr "User"
+
+msgid "Valuta"
+msgstr "Currency"
+
+msgid "Valutazione"
+msgstr "Rating"
+
+msgid "Variante"
+msgstr "Variant"
+
+msgid "Varianti"
+msgstr "Variants"
+
+msgid "XML SDI-compliant (archiviato per audit)."
+msgstr "SDI-compliant XML (archived for audit)."
+
+msgid "Zaffiro"
+msgstr "Sapphire"

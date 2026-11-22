@@ -7,6 +7,7 @@ Per PRD §3.2: guest checkout supported (Order can exist without a user).
 """
 from django.conf import settings
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class CustomerProfile(models.Model):
@@ -21,25 +22,25 @@ class CustomerProfile(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="profile",
-        verbose_name="Utente",
+        verbose_name=_("Utente"),
     )
     phone = models.CharField(
-        "Telefono",
+        _("Telefono"),
         max_length=20,
         blank=True,
-        help_text="Es. +39 02 1234567",
+        help_text=_("Es. +39 02 1234567"),
     )
     date_of_birth = models.DateField(
-        "Data di nascita",
+        _("Data di nascita"),
         null=True,
         blank=True,
     )
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Profilo cliente"
-        verbose_name_plural = "Profili clienti"
+        verbose_name = _("Profilo cliente")
+        verbose_name_plural = _("Profili clienti")
 
     def __str__(self):
         return f"{self.user.get_full_name() or self.user.username}"
@@ -57,27 +58,27 @@ class Address(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="addresses",
-        verbose_name="Utente",
+        verbose_name=_("Utente"),
     )
-    first_name = models.CharField("Nome", max_length=100)
-    last_name = models.CharField("Cognome", max_length=100)
-    line1 = models.CharField("Indirizzo riga 1", max_length=255)
-    line2 = models.CharField("Indirizzo riga 2", max_length=255, blank=True)
-    city = models.CharField("Città", max_length=100)
+    first_name = models.CharField(_("Nome"), max_length=100)
+    last_name = models.CharField(_("Cognome"), max_length=100)
+    line1 = models.CharField(_("Indirizzo riga 1"), max_length=255)
+    line2 = models.CharField(_("Indirizzo riga 2"), max_length=255, blank=True)
+    city = models.CharField(_("Città"), max_length=100)
     province = models.CharField(
-        "Provincia",
+        _("Provincia"),
         max_length=10,
-        help_text="Sigla provincia (es. MI, RM, TO)",
+        help_text=_("Sigla provincia (es. MI, RM, TO)"),
     )
-    postal_code = models.CharField("CAP", max_length=10)
-    country = models.CharField("Paese", max_length=2, default="IT")
-    is_default = models.BooleanField("Indirizzo predefinito", default=False)
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    postal_code = models.CharField(_("CAP"), max_length=10)
+    country = models.CharField(_("Paese"), max_length=2, default="IT")
+    is_default = models.BooleanField(_("Indirizzo predefinito"), default=False)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Indirizzo"
-        verbose_name_plural = "Indirizzi"
+        verbose_name = _("Indirizzo")
+        verbose_name_plural = _("Indirizzi")
         ordering = ["-is_default", "-created_at"]
 
     def __str__(self):

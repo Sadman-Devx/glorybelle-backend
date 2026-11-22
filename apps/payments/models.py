@@ -6,6 +6,7 @@ Per rule.md: "Never process a Stripe webhook without checking
 ProcessedWebhookEvent first."
 """
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class Payment(models.Model):
@@ -18,58 +19,58 @@ class Payment(models.Model):
     """
 
     STATUS_CHOICES = [
-        ("pending", "In attesa"),
-        ("succeeded", "Riuscito"),
-        ("failed", "Fallito"),
-        ("refunded", "Rimborsato"),
+        ("pending", _("In attesa")),
+        ("succeeded", _("Riuscito")),
+        ("failed", _("Fallito")),
+        ("refunded", _("Rimborsato")),
     ]
 
     order = models.OneToOneField(
         "orders.Order",
         on_delete=models.CASCADE,
         related_name="payment",
-        verbose_name="Ordine",
+        verbose_name=_("Ordine"),
     )
     stripe_payment_intent_id = models.CharField(
-        "Stripe PaymentIntent ID",
+        _("Stripe PaymentIntent ID"),
         max_length=255,
         unique=True,
         db_index=True,
     )
     stripe_charge_id = models.CharField(
-        "Stripe Charge ID",
+        _("Stripe Charge ID"),
         max_length=255,
         blank=True,
     )
     amount = models.DecimalField(
-        "Importo",
+        _("Importo"),
         max_digits=10,
         decimal_places=2,
     )
     currency = models.CharField(
-        "Valuta",
+        _("Valuta"),
         max_length=3,
         default="EUR",
     )
     status = models.CharField(
-        "Stato",
+        _("Stato"),
         max_length=20,
         choices=STATUS_CHOICES,
         default="pending",
         db_index=True,
     )
     idempotency_key = models.CharField(
-        "Chiave idempotenza",
+        _("Chiave idempotenza"),
         max_length=255,
         unique=True,
-        help_text="Chiave usata per creare il PaymentIntent su Stripe.",
+        help_text=_("Chiave usata per creare il PaymentIntent su Stripe."),
     )
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Pagamento"
-        verbose_name_plural = "Pagamenti"
+        verbose_name = _("Pagamento")
+        verbose_name_plural = _("Pagamenti")
         ordering = ["-created_at"]
 
     def __str__(self):
@@ -90,21 +91,21 @@ class ProcessedWebhookEvent(models.Model):
     """
 
     stripe_event_id = models.CharField(
-        "Stripe Event ID",
+        _("Stripe Event ID"),
         max_length=255,
         unique=True,
         db_index=True,
     )
     event_type = models.CharField(
-        "Tipo evento",
+        _("Tipo evento"),
         max_length=100,
-        help_text="Es. payment_intent.succeeded",
+        help_text=_("Es. payment_intent.succeeded"),
     )
-    processed_at = models.DateTimeField("Elaborato il", auto_now_add=True)
+    processed_at = models.DateTimeField(_("Elaborato il"), auto_now_add=True)
 
     class Meta:
-        verbose_name = "Evento webhook elaborato"
-        verbose_name_plural = "Eventi webhook elaborati"
+        verbose_name = _("Evento webhook elaborato")
+        verbose_name_plural = _("Eventi webhook elaborati")
         ordering = ["-processed_at"]
 
     def __str__(self):

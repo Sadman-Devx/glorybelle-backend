@@ -4,6 +4,7 @@ GLORYBELLE — Order Admin.
 Per PRD §3.5: clear order status display, read-only for order data.
 """
 from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
 
 from .models import Order, OrderItem
 
@@ -68,16 +69,16 @@ class OrderAdmin(admin.ModelAdmin):
     list_per_page = 25
 
     fieldsets = (
-        ("Ordine", {
+        (_("Ordine"), {
             "fields": (
                 "order_number", "user", "email", "status",
                 "stripe_payment_intent_id", "notes",
             ),
         }),
-        ("Totali", {
+        (_("Totali"), {
             "fields": ("subtotal", "shipping_cost", "total"),
         }),
-        ("Spedizione", {
+        (_("Spedizione"), {
             "fields": (
                 "shipping_first_name", "shipping_last_name",
                 "shipping_line1", "shipping_line2",
@@ -85,7 +86,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "shipping_postal_code", "shipping_country",
             ),
         }),
-        ("Fatturazione", {
+        (_("Fatturazione"), {
             "fields": (
                 "billing_first_name", "billing_last_name",
                 "billing_line1", "billing_line2",
@@ -99,13 +100,13 @@ class OrderAdmin(admin.ModelAdmin):
     def total_display(self, obj):
         return f"€{obj.total:.2f}"
 
-    total_display.short_description = "Totale"
+    total_display.short_description = _("Totale")
     total_display.admin_order_field = "total"
 
     def item_count(self, obj):
         return obj.items.count()
 
-    item_count.short_description = "Articoli"
+    item_count.short_description = _("Articoli")
 
     def has_add_permission(self, request):
         # Orders are created via checkout, not admin

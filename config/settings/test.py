@@ -46,3 +46,7 @@ PASSWORD_HASHERS = [
 # =============================================================================
 STRIPE_SECRET_KEY = "sk_test_placeholder"
 STRIPE_WEBHOOK_SECRET = "whsec_placeholder"
+
+# External integrations must never be called by the test suite.
+FATTURA24_API_KEY = "placeholder"
+SENDGRID_API_KEY = "placeholder"

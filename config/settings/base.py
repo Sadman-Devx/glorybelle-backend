@@ -49,8 +49,6 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
     "cloudinary_storage",
     "cloudinary",
-    # P1 fix #12 — django-unfold for branded admin
-    "unfold",
 ]
 
 LOCAL_APPS = [
@@ -65,7 +63,8 @@ LOCAL_APPS = [
     "apps.newsletter",
 ]
 
-INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+# Unfold must replace the admin site before Django's admin autodiscovery runs.
+INSTALLED_APPS = ["unfold"] + DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 # =============================================================================
 # Middleware
@@ -74,6 +73,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -148,7 +148,12 @@ AUTH_PASSWORD_VALIDATORS = [
 # =============================================================================
 # Internationalization — Italian market
 # =============================================================================
-LANGUAGE_CODE = "it"
+LANGUAGE_CODE = "en"
+LANGUAGES = [
+    ("it", "Italiano"),
+    ("en", "English"),
+]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 TIME_ZONE = "Europe/Rome"
 USE_I18N = True
 USE_TZ = True
@@ -202,7 +207,7 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/hour",
+        "anon": "1000/hour",
         "user": "1000/hour",
     },
 }
@@ -288,8 +293,13 @@ DEFAULT_FROM_EMAIL = "ordini@glorybelle.it"
 UNFOLD = {
     "SITE_TITLE": "GLORYBELLE Admin",
     "SITE_HEADER": "GLORYBELLE",
-    "SITE_SYMBOL": "luxury",  # Unfold icon set
+    "SITE_SYMBOL": "diamond",
     "SHOW_THEMES": False,
+    "SHOW_LANGUAGES": True,
+    "LANGUAGE_FLAGS": {
+        "it": "🇮🇹",
+        "en": "🇬🇧",
+    },
     "DEFAULT_THEME": "light",
     "COLORS": {
         "primary": {
@@ -317,7 +327,6 @@ UNFOLD = {
         "BG_COLOR": "#132f26",  # emerald-deep
         "NAV_COLOR": "#e6e1d3",  # warm light text
     },
-    "DASHBOARD_CALLBACK": "config.dashboard_callback.dashboard_callback",
 }
 FIRST_PURCHASE_DISCOUNT_PERCENT = Decimal("10.00")
 FIRST_PURCHASE_DISCOUNT_MIN_SUBTOTAL = Decimal("0.00")  # no minimum threshold

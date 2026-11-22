@@ -6,6 +6,7 @@ Per architecture.md: invoice generation is a Celery task — a Fattura24
 outage must not block checkout.
 """
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class Invoice(models.Model):
@@ -17,63 +18,63 @@ class Invoice(models.Model):
     """
 
     STATUS_CHOICES = [
-        ("pending", "In attesa"),
-        ("submitted", "Inviata"),
-        ("accepted", "Accettata"),
-        ("rejected", "Rifiutata"),
-        ("error", "Errore"),
+        ("pending", _("In attesa")),
+        ("submitted", _("Inviata")),
+        ("accepted", _("Accettata")),
+        ("rejected", _("Rifiutata")),
+        ("error", _("Errore")),
     ]
 
     order = models.OneToOneField(
         "orders.Order",
         on_delete=models.CASCADE,
         related_name="invoice",
-        verbose_name="Ordine",
+        verbose_name=_("Ordine"),
     )
     invoice_number = models.CharField(
-        "Numero fattura",
+        _("Numero fattura"),
         max_length=30,
         unique=True,
         db_index=True,
     )
     fattura24_id = models.CharField(
-        "Fattura24 ID",
+        _("Fattura24 ID"),
         max_length=255,
         blank=True,
-        help_text="ID esterno assegnato da Fattura24.",
+        help_text=_("ID esterno assegnato da Fattura24."),
     )
     status = models.CharField(
-        "Stato",
+        _("Stato"),
         max_length=20,
         choices=STATUS_CHOICES,
         default="pending",
         db_index=True,
     )
     pdf_url = models.URLField(
-        "URL PDF",
+        _("URL PDF"),
         blank=True,
-        help_text="Link al PDF generato della fattura.",
+        help_text=_("Link al PDF generato della fattura."),
     )
     xml_content = models.TextField(
-        "Contenuto XML",
+        _("Contenuto XML"),
         blank=True,
-        help_text="XML SDI-compliant (archiviato per audit).",
+        help_text=_("XML SDI-compliant (archiviato per audit)."),
     )
     error_message = models.TextField(
-        "Messaggio di errore",
+        _("Messaggio di errore"),
         blank=True,
     )
     attempts = models.PositiveIntegerField(
-        "Tentativi",
+        _("Tentativi"),
         default=0,
-        help_text="Numero di tentativi di invio.",
+        help_text=_("Numero di tentativi di invio."),
     )
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Fattura"
-        verbose_name_plural = "Fatture"
+        verbose_name = _("Fattura")
+        verbose_name_plural = _("Fatture")
         ordering = ["-created_at"]
 
     def __str__(self):

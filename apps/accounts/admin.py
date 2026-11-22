@@ -4,6 +4,7 @@ GLORYBELLE — Account Admin.
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
+from django.utils.translation import gettext_lazy as _
 
 from .models import Address, CustomerProfile
 
@@ -11,7 +12,7 @@ from .models import Address, CustomerProfile
 class CustomerProfileInline(admin.StackedInline):
     model = CustomerProfile
     can_delete = False
-    verbose_name_plural = "Profilo"
+    verbose_name_plural = _("Profilo")
 
 
 class UserAdmin(BaseUserAdmin):

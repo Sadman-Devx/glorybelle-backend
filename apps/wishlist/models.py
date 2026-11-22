@@ -11,6 +11,7 @@ rows are linked to a new default Wishlist via data migration.
 """
 from django.conf import settings
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class Wishlist(models.Model):
@@ -25,14 +26,14 @@ class Wishlist(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="wishlist",
-        verbose_name="Utente",
+        verbose_name=_("Utente"),
     )
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Lista desideri"
-        verbose_name_plural = "Liste desideri"
+        verbose_name = _("Lista desideri")
+        verbose_name_plural = _("Liste desideri")
 
     def __str__(self):
         return f"Lista desideri di {self.user.username}"
@@ -56,7 +57,7 @@ class WishlistItem(models.Model):
         Wishlist,
         on_delete=models.CASCADE,
         related_name="items",
-        verbose_name="Lista desideri",
+        verbose_name=_("Lista desideri"),
         null=True,  # P1 fix #17 — backwards-compat during migration
         blank=True,
     )
@@ -67,19 +68,19 @@ class WishlistItem(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="wishlist_items",
-        verbose_name="Utente",
+        verbose_name=_("Utente"),
     )
     product = models.ForeignKey(
         "catalog.Product",
         on_delete=models.CASCADE,
         related_name="wishlisted_by",
-        verbose_name="Prodotto",
+        verbose_name=_("Prodotto"),
     )
-    created_at = models.DateTimeField("Aggiunto il", auto_now_add=True)
+    created_at = models.DateTimeField(_("Aggiunto il"), auto_now_add=True)
 
     class Meta:
-        verbose_name = "Articolo lista desideri"
-        verbose_name_plural = "Articoli lista desideri"
+        verbose_name = _("Articolo lista desideri")
+        verbose_name_plural = _("Articoli lista desideri")
         unique_together = [("user", "product")]
         ordering = ["-created_at"]
 
