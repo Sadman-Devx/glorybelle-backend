@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
 
 from . import services
 from .serializers import (
@@ -37,6 +38,7 @@ class CartView(APIView):
     """
 
     permission_classes = [AllowAny]
+    serializer_class = CartSerializer
 
     def get(self, request):
         cart = _get_cart(request)
@@ -62,7 +64,9 @@ class CartItemView(APIView):
     """
 
     permission_classes = [AllowAny]
+    serializer_class = CartSerializer
 
+    @extend_schema(request=AddToCartSerializer, responses=CartSerializer)
     def post(self, request):
         """Add a product variant to the cart."""
         serializer = AddToCartSerializer(data=request.data)
@@ -82,6 +86,7 @@ class CartItemView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
+    @extend_schema(request=UpdateCartItemSerializer, responses=CartSerializer)
     def patch(self, request, item_id=None):
         """Update cart item quantity."""
         serializer = UpdateCartItemSerializer(data=request.data)
@@ -99,6 +104,7 @@ class CartItemView(APIView):
             CartSerializer(cart, context={"request": request}).data,
         )
 
+    @extend_schema(request=None, responses=CartSerializer)
     def delete(self, request, item_id=None):
         """Remove an item from the cart."""
         cart = _get_cart(request)
@@ -116,6 +122,7 @@ class CartMergeView(APIView):
     """
 
     permission_classes = [AllowAny]
+    serializer_class = CartSerializer
 
     def post(self, request):
         session_key = request.data.get("session_key")

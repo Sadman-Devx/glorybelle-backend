@@ -42,6 +42,23 @@ class Payment(models.Model):
         max_length=255,
         blank=True,
     )
+    stripe_refund_id = models.CharField(
+        _("Stripe Refund ID"),
+        max_length=255,
+        blank=True,
+    )
+    stripe_refund_status = models.CharField(
+        _("Stato rimborso Stripe"),
+        max_length=20,
+        blank=True,
+        choices=[
+            ("pending", _("In attesa")),
+            ("succeeded", _("Riuscito")),
+            ("failed", _("Fallito")),
+            ("canceled", _("Annullato")),
+            ("requires_action", _("Richiede un'azione")),
+        ],
+    )
     amount = models.DecimalField(
         _("Importo"),
         max_digits=10,

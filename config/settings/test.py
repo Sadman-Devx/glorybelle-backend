@@ -14,6 +14,8 @@ Redis is NOT required: cache is in-memory and Celery runs eagerly.
 """
 from .local import *  # noqa: F401, F403
 
+SECRET_KEY = "test-only-secret-key-that-is-at-least-thirty-two-bytes"
+
 # =============================================================================
 # Cache — local memory (no Redis required)
 # =============================================================================

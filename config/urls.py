@@ -19,9 +19,12 @@ urlpatterns = [
     # Admin
     path("admin/", admin.site.urls),
     # API — each app registers its own routes
+    path("api/admin/", include("admin_api.urls")),
     path("api/", include("apps.catalog.urls")),
     path("api/", include("apps.accounts.urls")),
     path("api/", include("apps.cart.urls")),
+    path("api/", include("apps.enquiries.urls")),
+    path("api/site-content/", include("apps.site_content.urls")),
     path("api/", include("apps.orders.urls")),
     path("api/", include("apps.payments.urls")),
     path("api/", include("apps.wishlist.urls")),

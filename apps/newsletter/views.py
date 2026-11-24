@@ -23,6 +23,7 @@ class NewsletterSubscribeView(APIView):
     """
 
     permission_classes = [AllowAny]
+    serializer_class = NewsletterSubscribeSerializer
 
     def post(self, request):
         serializer = NewsletterSubscribeSerializer(data=request.data)
@@ -54,6 +55,7 @@ class NewsletterUnsubscribeView(APIView):
     """
 
     permission_classes = [AllowAny]
+    serializer_class = NewsletterUnsubscribeSerializer
 
     def post(self, request):
         serializer = NewsletterUnsubscribeSerializer(data=request.data)

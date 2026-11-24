@@ -41,6 +41,9 @@ class OrderAdmin(admin.ModelAdmin):
         "user",
         "email",
         "status",
+        "tracking_number",
+        "archived_at",
+        "archive_reason",
         "subtotal",
         "shipping_cost",
         "total",
@@ -72,6 +75,7 @@ class OrderAdmin(admin.ModelAdmin):
         (_("Ordine"), {
             "fields": (
                 "order_number", "user", "email", "status",
+                "tracking_number", "archived_at", "archive_reason",
                 "stripe_payment_intent_id", "notes",
             ),
         }),

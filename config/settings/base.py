@@ -44,17 +44,23 @@ THIRD_PARTY_APPS = [
     "rest_framework_simplejwt",
     # P1 fix #10 — token_blacklist needed for logout (blacklist refresh tokens)
     "rest_framework_simplejwt.token_blacklist",
+    "django_otp",
+    "django_otp.plugins.otp_totp",
     "django_filters",
     "corsheaders",
+    "simple_history",
     "drf_spectacular",
     "cloudinary_storage",
     "cloudinary",
 ]
 
 LOCAL_APPS = [
+    "admin_api.apps.AdminApiConfig",
     "apps.accounts",
     "apps.catalog",
     "apps.cart",
+    "apps.enquiries.apps.EnquiriesConfig",
+    "apps.site_content.apps.SiteContentConfig",
     "apps.orders",
     "apps.payments",
     "apps.invoicing",
@@ -77,8 +83,12 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django_otp.middleware.OTPMiddleware",
+    "admin_api.middleware.AdminSessionPolicyMiddleware",
+    "simple_history.middleware.HistoryRequestMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "admin_api.middleware.AdminSecurityHeadersMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -177,6 +187,18 @@ CLOUDINARY_STORAGE = {
     "API_SECRET": config("CLOUDINARY_API_SECRET", default=""),
 }
 
+# Admin uploads use an isolated S3-compatible bucket; legacy uploads continue
+# to use the configured default storage above.
+ADMIN_MEDIA_S3_BUCKET = config("ADMIN_MEDIA_S3_BUCKET", default="")
+ADMIN_MEDIA_S3_REGION = config("ADMIN_MEDIA_S3_REGION", default="eu-central-1")
+ADMIN_MEDIA_S3_ENDPOINT_URL = config("ADMIN_MEDIA_S3_ENDPOINT_URL", default="")
+ADMIN_MEDIA_S3_ACCESS_KEY_ID = config("ADMIN_MEDIA_S3_ACCESS_KEY_ID", default="")
+ADMIN_MEDIA_S3_SECRET_ACCESS_KEY = config(
+    "ADMIN_MEDIA_S3_SECRET_ACCESS_KEY", default=""
+)
+ADMIN_MEDIA_PUBLIC_BASE_URL = config("ADMIN_MEDIA_PUBLIC_BASE_URL", default="")
+ADMIN_MEDIA_PRESIGN_TTL = config("ADMIN_MEDIA_PRESIGN_TTL", default=300, cast=int)
+
 # =============================================================================
 # Default primary key field type
 # =============================================================================
@@ -209,6 +231,8 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "1000/hour",
         "user": "1000/hour",
+        "admin_login": "5/minute",
+        "enquiry_create": "5/hour",
     },
 }
 
@@ -223,6 +247,33 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+
+ADMIN_SESSION_IDLE_TIMEOUT_SECONDS = config(
+    "ADMIN_SESSION_IDLE_TIMEOUT_SECONDS", default=1800, cast=int
+)
+ADMIN_LOGIN_FAILURE_LIMIT = config("ADMIN_LOGIN_FAILURE_LIMIT", default=3, cast=int)
+ADMIN_LOGIN_LOCKOUT_SECONDS = config(
+    "ADMIN_LOGIN_LOCKOUT_SECONDS", default=900, cast=int
+)
+ADMIN_MFA_CHALLENGE_TTL_SECONDS = config(
+    "ADMIN_MFA_CHALLENGE_TTL_SECONDS", default=600, cast=int
+)
+ADMIN_MFA_RECOVERY_CODE_COUNT = config(
+    "ADMIN_MFA_RECOVERY_CODE_COUNT", default=10, cast=int
+)
+if (
+    ADMIN_SESSION_IDLE_TIMEOUT_SECONDS < 60
+    or ADMIN_LOGIN_FAILURE_LIMIT < 1
+    or ADMIN_LOGIN_LOCKOUT_SECONDS < 60
+    or ADMIN_MFA_CHALLENGE_TTL_SECONDS < 60
+    or ADMIN_MFA_RECOVERY_CODE_COUNT < 1
+):
+    raise ValueError("Admin security timeout and count settings are invalid.")
+
 # =============================================================================
 # drf-spectacular — OpenAPI schema
 # =============================================================================
@@ -233,6 +284,10 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/",
+    "ENUM_NAME_OVERRIDES": {
+        "OrderStatusEnum": "apps.orders.models.Order.STATUS_CHOICES",
+        "EnquiryStatusEnum": "apps.enquiries.models.Enquiry.STATUS_CHOICES",
+    },
 }
 
 # =============================================================================
@@ -243,6 +298,9 @@ CORS_ALLOWED_ORIGINS = config(
     default="http://localhost:3000",
     cast=Csv(),
 )
+CORS_ALLOW_ALL_ORIGINS = False
+if any("*" in origin for origin in CORS_ALLOWED_ORIGINS):
+    raise ValueError("CORS_ALLOWED_ORIGINS must contain exact origins, not wildcards.")
 CORS_ALLOW_CREDENTIALS = True
 
 # =============================================================================
@@ -282,7 +340,25 @@ STOCK_RESERVATION_MINUTES = 15
 # =============================================================================
 # Email
 # =============================================================================
-DEFAULT_FROM_EMAIL = "ordini@glorybelle.it"
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = config("EMAIL_HOST", default="localhost")
+EMAIL_PORT = config("EMAIL_PORT", default=25, cast=int)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=False, cast=bool)
+EMAIL_USE_SSL = config("EMAIL_USE_SSL", default=False, cast=bool)
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=10, cast=int)
+DEFAULT_FROM_EMAIL = config(
+    "DEFAULT_FROM_EMAIL",
+    default="ordini@glorybelle.it",
+)
+ENQUIRY_NOTIFICATION_EMAIL = config(
+    "ENQUIRY_NOTIFICATION_EMAIL",
+    default=DEFAULT_FROM_EMAIL,
+)
 
 # =============================================================================
 # django-unfold — branded admin (P1 fix #12)

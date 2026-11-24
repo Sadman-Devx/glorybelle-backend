@@ -10,6 +10,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from simple_history.models import HistoricalRecords
 
 
 class Order(models.Model):
@@ -132,10 +133,23 @@ class Order(models.Model):
         blank=True,
         db_index=True,
     )
+    tracking_number = models.CharField(
+        _("Numero di tracciamento"),
+        max_length=100,
+        blank=True,
+    )
+    archived_at = models.DateTimeField(
+        _("Archiviato il"),
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    archive_reason = models.TextField(_("Motivo archiviazione"), blank=True)
 
     notes = models.TextField(_("Note del cliente"), blank=True)
     created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
     updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _("Ordine")
@@ -187,3 +201,31 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.product_name} × {self.quantity}"
+
+
+class OrderAdminNote(models.Model):
+    """Private staff note; never included in customer-facing order serializers."""
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="admin_notes",
+        verbose_name=_("Ordine"),
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="order_admin_notes",
+        verbose_name=_("Autore"),
+    )
+    body = models.TextField(_("Nota interna"))
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Nota interna ordine")
+        verbose_name_plural = _("Note interne ordine")
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"Nota ordine {self.order.order_number} ({self.created_at:%Y-%m-%d})"

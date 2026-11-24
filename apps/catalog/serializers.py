@@ -6,6 +6,9 @@ prices from ProductVariant.price_override / Product.base_price.
 Per rule.md: use select_related / prefetch_related to avoid N+1 queries.
 """
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
+
+from admin_api.media_storage import public_media_url
 
 from .models import Category, Product, ProductImage, ProductVariant
 
@@ -29,12 +32,15 @@ class CategorySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_product_count(self, obj):
+    @extend_schema_field(serializers.IntegerField())
+    def get_product_count(self, obj) -> int:
         return obj.products.filter(is_active=True).count()
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
     """Product image with primary and hover-swap alt."""
+
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductImage
@@ -47,6 +53,16 @@ class ProductImageSerializer(serializers.ModelSerializer):
             "sort_order",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_image(self, obj) -> str | None:
+        if obj.media_asset_id:
+            return public_media_url(obj.media_asset.object_key_800)
+        if not obj.image:
+            return None
+        image_url = obj.image.url
+        request = self.context.get("request")
+        return request.build_absolute_uri(image_url) if request else image_url
 
 
 class ProductVariantSerializer(serializers.ModelSerializer):
@@ -77,7 +93,8 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_price(self, obj):
+    @extend_schema_field(serializers.CharField())
+    def get_price(self, obj) -> str:
         return str(obj.price)
 
 
@@ -115,19 +132,26 @@ class ProductListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_primary_image(self, obj):
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_primary_image(self, obj) -> str | None:
         img = obj.primary_image
+        if img and img.media_asset_id:
+            return public_media_url(img.media_asset.object_key_800)
         if img and img.image:
             return self.context["request"].build_absolute_uri(img.image.url)
         return None
 
-    def get_hover_image(self, obj):
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_hover_image(self, obj) -> str | None:
         img = obj.primary_image
         if img and img.image_alt:
             return self.context["request"].build_absolute_uri(img.image_alt.url)
         return None
 
-    def get_price_range(self, obj):
+    @extend_schema_field(
+        serializers.DictField(child=serializers.CharField())
+    )
+    def get_price_range(self, obj) -> dict[str, str]:
         """Return min/max price across active variants."""
         variants = obj.variants.filter(is_active=True)
         if not variants.exists():
@@ -135,7 +159,10 @@ class ProductListSerializer(serializers.ModelSerializer):
         prices = [v.price for v in variants]
         return {"min": str(min(prices)), "max": str(max(prices))}
 
-    def get_available_metals(self, obj):
+    @extend_schema_field(
+        serializers.ListField(child=serializers.CharField())
+    )
+    def get_available_metals(self, obj) -> list[str]:
         """
         Return list of metals that have REAL availability > 0.
 

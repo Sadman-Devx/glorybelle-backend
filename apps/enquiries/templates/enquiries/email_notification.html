@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="it">
+  <body>
+    <h1>Nuova richiesta dal sito GLORYBELLE</h1>
+    <p>È arrivata una nuova richiesta dal sito.</p>
+    <dl>
+      <dt>Nome</dt><dd>{{ enquiry.name }}</dd>
+      <dt>Email</dt><dd><a href="mailto:{{ enquiry.email }}">{{ enquiry.email }}</a></dd>
+      <dt>Argomento</dt><dd>{{ topic }}</dd>
+      {% if atelier_type %}<dt>Tipo di Atelier</dt><dd>{{ atelier_type }}</dd>{% endif %}
+      <dt>Ricevuta il</dt><dd>{{ enquiry.created_at|date:"d/m/Y H:i" }}</dd>
+    </dl>
+    <h2>Messaggio</h2>
+    <p>{{ enquiry.message|linebreaksbr }}</p>
+  </body>
+</html>

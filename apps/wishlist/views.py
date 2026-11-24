@@ -30,6 +30,8 @@ class WishlistListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return WishlistItem.objects.none()
         return (
             WishlistItem.objects.filter(user=self.request.user)
             .select_related("product__category")
@@ -50,6 +52,7 @@ class WishlistToggleView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    serializer_class = WishlistToggleSerializer
 
     def post(self, request):
         serializer = WishlistToggleSerializer(data=request.data)
@@ -99,6 +102,7 @@ class WishlistItemDetailView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    serializer_class = WishlistToggleSerializer
 
     def delete(self, request, product_id):
         try:

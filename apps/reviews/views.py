@@ -24,6 +24,8 @@ class ProductReviewListView(generics.ListAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Review.objects.none()
         slug = self.kwargs["product_slug"]
         return (
             Review.objects.filter(

@@ -10,7 +10,7 @@ from django.dispatch import receiver
 
 from core.cache import invalidate_category_cache, invalidate_product_cache
 
-from .models import Category, Product, ProductVariant
+from .models import Category, Product, ProductImage, ProductVariant
 
 
 @receiver([post_save, post_delete], sender=Product)
@@ -22,6 +22,12 @@ def invalidate_product_on_change(sender, instance, **kwargs):
 @receiver([post_save, post_delete], sender=ProductVariant)
 def invalidate_product_on_variant_change(sender, instance, **kwargs):
     """Clear product cache when any variant changes (stock, price, etc.)."""
+    invalidate_product_cache()
+
+
+@receiver([post_save, post_delete], sender=ProductImage)
+def invalidate_product_on_image_change(sender, instance, **kwargs):
+    """Clear product cache when its gallery changes."""
     invalidate_product_cache()
 
 
