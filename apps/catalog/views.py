@@ -101,7 +101,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         return (
             Product.objects.filter(is_active=True)
             .select_related("category")
-            .prefetch_related("variants", "images")
+            .prefetch_related("variants", "images__media_asset")
         )
 
     def get_serializer_class(self):

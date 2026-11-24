@@ -7,5 +7,8 @@
 # WSGI server
 gunicorn>=22.0,<23.0
 
+# Static files (admin CSS/JS) served from the container
+whitenoise>=6.7,<7.0
+
 # Error tracking
 sentry-sdk[django]>=2.0,<3.0

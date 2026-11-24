@@ -48,6 +48,7 @@ class CheckoutView(APIView):
     """
 
     permission_classes = [AllowAny]
+    serializer_class = CheckoutSerializer
 
     def post(self, request):
         serializer = CheckoutSerializer(data=request.data)
@@ -128,6 +129,8 @@ class OrderHistoryView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Order.objects.none()
         return (
             Order.objects.filter(user=self.request.user)
             .annotate(item_count_annotated=Count("items"))

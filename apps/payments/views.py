@@ -21,6 +21,8 @@ from rest_framework.decorators import (
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 
 from . import services
 from .stripe_client import verify_webhook_signature
@@ -28,6 +30,10 @@ from .stripe_client import verify_webhook_signature
 logger = logging.getLogger(__name__)
 
 
+@extend_schema(
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 500: OpenApiTypes.OBJECT},
+)
 @csrf_exempt
 @api_view(["POST"])
 @authentication_classes([])

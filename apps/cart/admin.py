@@ -2,6 +2,7 @@
 GLORYBELLE — Cart Admin.
 """
 from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
 
 from .models import Cart, CartItem, StockReservation
 
@@ -14,7 +15,7 @@ class CartItemInline(admin.TabularInline):
     def line_total(self, obj):
         return f"€{obj.line_total:.2f}"
 
-    line_total.short_description = "Totale riga"
+    line_total.short_description = _("Totale riga")
 
 
 @admin.register(Cart)
@@ -27,12 +28,12 @@ class CartAdmin(admin.ModelAdmin):
     def total_display(self, obj):
         return f"€{obj.total:.2f}"
 
-    total_display.short_description = "Totale"
+    total_display.short_description = _("Totale")
 
     def item_count(self, obj):
         return obj.item_count
 
-    item_count.short_description = "Articoli"
+    item_count.short_description = _("Articoli")
 
 
 @admin.register(StockReservation)
@@ -51,5 +52,5 @@ class StockReservationAdmin(admin.ModelAdmin):
     def is_expired_display(self, obj):
         return obj.is_expired
 
-    is_expired_display.short_description = "Scaduta"
+    is_expired_display.short_description = _("Scaduta")
     is_expired_display.boolean = True

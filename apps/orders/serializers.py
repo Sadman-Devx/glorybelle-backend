@@ -5,6 +5,7 @@ P1 fix #8: idempotency_key exposed.
 New: discount_percent + discount_amount fields in OrderSerializer + OrderListSerializer.
 """
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 
 from .models import Order, OrderItem
 
@@ -78,7 +79,8 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_has_discount(self, obj):
+    @extend_schema_field(serializers.BooleanField())
+    def get_has_discount(self, obj) -> bool:
         return obj.discount_amount > 0
 
 
@@ -107,13 +109,15 @@ class OrderListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_item_count(self, obj):
+    @extend_schema_field(serializers.IntegerField())
+    def get_item_count(self, obj) -> int:
         annotated = getattr(obj, "item_count_annotated", None)
         if annotated is not None:
             return annotated
         return obj.items.count()
 
-    def get_has_discount(self, obj):
+    @extend_schema_field(serializers.BooleanField())
+    def get_has_discount(self, obj) -> bool:
         return obj.discount_amount > 0
 
 

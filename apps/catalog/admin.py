@@ -6,6 +6,7 @@ flows. Product admin has inline variants and images with image previews.
 """
 from django.contrib import admin
 from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
 
 from .models import Category, Product, ProductImage, ProductVariant
 
@@ -46,7 +47,7 @@ class ProductImageInline(admin.TabularInline):
             )
         return "—"
 
-    image_preview.short_description = "Anteprima"
+    image_preview.short_description = _("Anteprima")
 
 
 @admin.register(Category)
@@ -79,7 +80,7 @@ class ProductAdmin(admin.ModelAdmin):
     def variant_count(self, obj):
         return obj.variants.count()
 
-    variant_count.short_description = "Varianti"
+    variant_count.short_description = _("Varianti")
 
     def primary_image_preview(self, obj):
         img = obj.primary_image
@@ -90,4 +91,4 @@ class ProductAdmin(admin.ModelAdmin):
             )
         return "—"
 
-    primary_image_preview.short_description = "Foto"
+    primary_image_preview.short_description = _("Foto")

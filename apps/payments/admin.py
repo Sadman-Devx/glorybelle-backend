@@ -2,6 +2,7 @@
 GLORYBELLE — Payment Admin.
 """
 from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
 
 from .models import Payment, ProcessedWebhookEvent
 
@@ -36,7 +37,7 @@ class PaymentAdmin(admin.ModelAdmin):
     def amount_display(self, obj):
         return f"€{obj.amount:.2f}"
 
-    amount_display.short_description = "Importo"
+    amount_display.short_description = _("Importo")
     amount_display.admin_order_field = "amount"
 
     def has_add_permission(self, request):

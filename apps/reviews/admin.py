@@ -4,6 +4,7 @@ GLORYBELLE — Review Admin.
 Per PRD §3.4: moderation queue with is_approved filter and bulk approve action.
 """
 from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
 
 from .models import Review
 
@@ -28,10 +29,10 @@ class ReviewAdmin(admin.ModelAdmin):
         updated = queryset.update(is_approved=True)
         self.message_user(request, f"{updated} recensione/i approvata/e.")
 
-    approve_reviews.short_description = "Approva le recensioni selezionate"
+    approve_reviews.short_description = _("Approva le recensioni selezionate")
 
     def reject_reviews(self, request, queryset):
         updated = queryset.update(is_approved=False)
         self.message_user(request, f"{updated} recensione/i rifiutata/e.")
 
-    reject_reviews.short_description = "Rifiuta le recensioni selezionate"
+    reject_reviews.short_description = _("Rifiuta le recensioni selezionate")

@@ -29,6 +29,7 @@ from .serializers import (
     AddressSerializer,
     CustomerProfileSerializer,
     FirstPurchaseDiscountSerializer,
+    LogoutSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetSerializer,
     RegisterSerializer,
@@ -73,6 +74,7 @@ class LogoutView(APIView):
     """POST /api/accounts/logout/"""
 
     permission_classes = [IsAuthenticated]
+    serializer_class = LogoutSerializer
 
     def post(self, request):
         refresh_token = request.data.get("refresh")
@@ -97,6 +99,7 @@ class PasswordResetView(APIView):
     """POST /api/accounts/password/reset/"""
 
     permission_classes = [AllowAny]
+    serializer_class = PasswordResetSerializer
 
     def post(self, request):
         serializer = PasswordResetSerializer(data=request.data)
@@ -144,6 +147,7 @@ class PasswordResetConfirmView(APIView):
     """POST /api/accounts/password/reset/confirm/"""
 
     permission_classes = [AllowAny]
+    serializer_class = PasswordResetConfirmSerializer
 
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
@@ -212,6 +216,7 @@ class FirstPurchaseDiscountView(APIView):
     """
 
     permission_classes = [AllowAny]
+    serializer_class = FirstPurchaseDiscountSerializer
 
     def get(self, request):
         # Import here to avoid circular import
@@ -251,6 +256,7 @@ class AddressViewSet(viewsets.ModelViewSet):
 
     serializer_class = AddressSerializer
     permission_classes = [IsAuthenticated, IsOwner]
+    queryset = Address.objects.none()
 
     def get_queryset(self):
         return Address.objects.filter(user=self.request.user)

@@ -118,6 +118,12 @@ class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
 
+class LogoutSerializer(serializers.Serializer):
+    """Input for POST /api/accounts/logout/."""
+
+    refresh = serializers.CharField()
+
+
 class PasswordResetConfirmSerializer(serializers.Serializer):
     """Input for POST /api/accounts/password/reset/confirm/."""
 

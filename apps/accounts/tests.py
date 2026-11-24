@@ -19,6 +19,7 @@ class TestRegistration:
             "first_name": "Francesca",
             "last_name": "Rossi",
             "phone": "+39 02 1234567",
+            "birth_date": "1995-05-20",
         }
         response = api_client.post(url, data, format="json")
         assert response.status_code == 201

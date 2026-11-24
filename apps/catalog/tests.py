@@ -2,9 +2,28 @@
 GLORYBELLE — Catalog Tests.
 """
 import pytest
+from django.apps import apps
 from django.urls import reverse
+from django.utils.translation import override
 
 from apps.catalog.models import Category, Product, ProductImage, ProductVariant
+
+
+def test_admin_labels_follow_selected_language():
+    base_price = Product._meta.get_field("base_price")
+    metal_choices = dict(Product._meta.get_field("metal").choices)
+
+    with override("en"):
+        assert str(apps.get_app_config("catalog").verbose_name) == "Catalog"
+        assert str(Category._meta.verbose_name_plural) == "Categories"
+        assert str(base_price.verbose_name) == "Base price"
+        assert str(metal_choices["gold"]) == "18K gold"
+
+    with override("it"):
+        assert str(apps.get_app_config("catalog").verbose_name) == "Catalogo"
+        assert str(Category._meta.verbose_name_plural) == "Categorie"
+        assert str(base_price.verbose_name) == "Prezzo base"
+        assert str(metal_choices["gold"]) == "Oro 18K"
 
 
 @pytest.fixture

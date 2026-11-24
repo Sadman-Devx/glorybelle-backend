@@ -1,0 +1,11 @@
+È arrivata una nuova richiesta dal sito GLORYBELLE.
+
+Nome: {{ enquiry.name }}
+Email: {{ enquiry.email }}
+Argomento: {{ topic }}
+{% if atelier_type %}Tipo di Atelier: {{ atelier_type }}
+{% endif %}
+Ricevuta il: {{ enquiry.created_at|date:"d/m/Y H:i" }}
+
+Messaggio:
+{{ enquiry.message }}

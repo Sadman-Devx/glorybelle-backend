@@ -4,6 +4,7 @@ GLORYBELLE — Newsletter Models.
 Per PRD §3.2: Newsletter signup (footer).
 """
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class NewsletterSubscriber(models.Model):
@@ -15,28 +16,28 @@ class NewsletterSubscriber(models.Model):
     """
 
     email = models.EmailField(
-        "Email",
+        _("Email"),
         unique=True,
         db_index=True,
     )
     is_active = models.BooleanField(
-        "Attivo",
+        _("Attivo"),
         default=True,
-        help_text="Disattivato quando l'utente annulla l'iscrizione.",
+        help_text=_("Disattivato quando l'utente annulla l'iscrizione."),
     )
     subscribed_at = models.DateTimeField(
-        "Iscritto il",
+        _("Iscritto il"),
         auto_now_add=True,
     )
     unsubscribed_at = models.DateTimeField(
-        "Disiscritto il",
+        _("Disiscritto il"),
         null=True,
         blank=True,
     )
 
     class Meta:
-        verbose_name = "Iscritto newsletter"
-        verbose_name_plural = "Iscritti newsletter"
+        verbose_name = _("Iscritto newsletter")
+        verbose_name_plural = _("Iscritti newsletter")
         ordering = ["-subscribed_at"]
 
     def __str__(self):

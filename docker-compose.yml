@@ -1,58 +1,83 @@
-version: "3.9"
-
 # =============================================================================
 # GLORYBELLE — Backend Docker Compose
 #
-# P1 fix #11 — full stack: Postgres + Redis + Django + Celery worker + Celery beat.
-# Architecture.md §1.1 demands a stateless Django app + Celery workers for async
-# tasks (email, invoicing, stock reservation cleanup).
+# Stack: Postgres + Redis + one-off migrate + Django (gunicorn) + Celery worker
+#        + Celery beat. All app services share ONE image built from ./Dockerfile.
 #
-# Usage:
-#   docker compose up -d         # start all services
-#   docker compose logs -f app   # tail Django logs
+# Setup:
+#   cp .env.example .env         # then edit values (SECRET_KEY, Stripe, ...)
+#   docker compose up -d --build
 #   docker compose exec app python manage.py createsuperuser
+#   docker compose logs -f app
+#
+# Only the infra you need while coding (Django on your host, DB/Redis in Docker):
+#   docker compose up -d db redis
+#
+# Running over plain http://localhost? Set SECURE_SSL_REDIRECT=False in .env
+# (production settings force an https redirect otherwise).
 # =============================================================================
+
+name: glorybelle
+
+# Shared by every service that runs the Django codebase.
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: glorybelle-backend:latest
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    # Container-internal hostnames override the localhost values in .env.
+    DATABASE_URL: postgres://${POSTGRES_USER:-glorybelle}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-glorybelle}
+    REDIS_URL: redis://redis:6379/0
 
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: glorybelle
-      POSTGRES_USER: glorybelle
-      POSTGRES_PASSWORD: glorybelle
+      POSTGRES_DB: ${POSTGRES_DB:-glorybelle}
+      POSTGRES_USER: ${POSTGRES_USER:-glorybelle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    # Bound to loopback only: reachable from your machine (psql, pytest), never
+    # from the network. Remove this block entirely on a server.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U glorybelle"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Loopback only (see note on db). Remove on a server.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # Django app — serves API + admin
+  # One-off: apply DB migrations, then exit. app/worker wait for it to succeed,
+  # so they never start against an outdated schema.
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: python manage.py migrate --noinput
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Django app — serves API + admin (gunicorn)
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgres://glorybelle:glorybelle@db:5432/glorybelle
-      REDIS_URL: redis://redis:6379/0
+    <<: *backend
     ports:
       - "8000:8000"
     depends_on:
@@ -60,57 +85,42 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
-      # Mount media files so uploaded images persist across container restarts
+      # Only used when Cloudinary is NOT configured; keeps uploads across restarts.
       - media_files:/app/media
-      # Mount static so admin CSS/JS survive container rebuilds
-      - static_files:/app/staticfiles
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/api/schema/').status == 200 else sys.exit(1)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
-  # Celery worker — runs async tasks (email, invoicing, stock cleanup)
+  # Celery worker — async tasks (email, invoicing, stock reservation cleanup)
   celery_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgres://glorybelle:glorybelle@db:5432/glorybelle
-      REDIS_URL: redis://redis:6379/0
+    <<: *backend
+    command: celery -A config worker -l info --concurrency=2
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-      app:
-        condition: service_healthy
-    command: celery -A config worker -l info --concurrency=2
-    # No ports — worker doesn't serve HTTP
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - media_files:/app/media
 
-  # Celery beat — schedules periodic tasks (release_expired_reservations every 60s)
+  # Celery beat — periodic tasks (release_expired_reservations every 60s)
   celery_beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgres://glorybelle:glorybelle@db:5432/glorybelle
-      REDIS_URL: redis://redis:6379/0
+    <<: *backend
+    command: celery -A config beat -l info --schedule /tmp/celerybeat-schedule
     depends_on:
       redis:
         condition: service_healthy
-    command: celery -A config beat -l info
-    # No ports — beat doesn't serve HTTP
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
   media_files:
-  static_files:

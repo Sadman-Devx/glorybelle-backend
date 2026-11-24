@@ -5,18 +5,22 @@ Category, Product, ProductVariant, ProductImage.
 Per architecture.md: each variant has independent stock (metal × size).
 Per rule.md: never delete a ProductVariant referenced by an existing order (PROTECT).
 """
+from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils.text import slugify
+from django.utils.translation import gettext_lazy as _
+from simple_history.models import HistoricalRecords
 
 
 class Category(models.Model):
     """Product category (e.g., Anelli, Collane, Orecchini)."""
 
-    name = models.CharField("Nome", max_length=100)
-    slug = models.SlugField("Slug", max_length=120, unique=True, db_index=True)
-    description = models.TextField("Descrizione", blank=True)
+    name = models.CharField(_("Nome"), max_length=100)
+    slug = models.SlugField(_("Slug"), max_length=120, unique=True, db_index=True)
+    description = models.TextField(_("Descrizione"), blank=True)
     image = models.ImageField(
-        "Immagine",
+        _("Immagine"),
         upload_to="categories/",
         blank=True,
         null=True,
@@ -27,16 +31,16 @@ class Category(models.Model):
         null=True,
         blank=True,
         related_name="children",
-        verbose_name="Categoria padre",
+        verbose_name=_("Categoria padre"),
     )
-    is_active = models.BooleanField("Attiva", default=True, db_index=True)
-    sort_order = models.PositiveIntegerField("Ordine", default=0)
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    is_active = models.BooleanField(_("Attiva"), default=True, db_index=True)
+    sort_order = models.PositiveIntegerField(_("Ordine"), default=0)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
 
     class Meta:
-        verbose_name = "Categoria"
-        verbose_name_plural = "Categorie"
+        verbose_name = _("Categoria")
+        verbose_name_plural = _("Categorie")
         ordering = ["sort_order", "name"]
 
     def __str__(self):
@@ -58,62 +62,63 @@ class Product(models.Model):
     """
 
     METAL_CHOICES = [
-        ("gold", "Oro 18K"),
-        ("rose", "Oro Rosa"),
-        ("silver", "Argento 925"),
+        ("gold", _("Oro 18K")),
+        ("rose", _("Oro Rosa")),
+        ("silver", _("Argento 925")),
     ]
 
     GEM_CHOICES = [
-        ("diamond", "Diamante"),
-        ("emerald", "Smeraldo"),
-        ("ruby", "Rubino"),
-        ("sapphire", "Zaffiro"),
-        ("amethyst", "Ametista"),
-        ("none", "Nessuna"),
+        ("diamond", _("Diamante")),
+        ("emerald", _("Smeraldo")),
+        ("ruby", _("Rubino")),
+        ("sapphire", _("Zaffiro")),
+        ("amethyst", _("Ametista")),
+        ("none", _("Nessuna")),
     ]
 
     category = models.ForeignKey(
         Category,
         on_delete=models.PROTECT,
         related_name="products",
-        verbose_name="Categoria",
+        verbose_name=_("Categoria"),
     )
-    name = models.CharField("Nome", max_length=200)
-    slug = models.SlugField("Slug", max_length=220, unique=True, db_index=True)
-    description = models.TextField("Descrizione", blank=True)
+    name = models.CharField(_("Nome"), max_length=200)
+    slug = models.SlugField(_("Slug"), max_length=220, unique=True, db_index=True)
+    description = models.TextField(_("Descrizione"), blank=True)
     base_price = models.DecimalField(
-        "Prezzo base",
+        _("Prezzo base"),
         max_digits=10,
         decimal_places=2,
-        help_text="Prezzo di listino in EUR. Le varianti possono sovrascriverlo.",
+        help_text=_("Prezzo di listino in EUR. Le varianti possono sovrascriverlo."),
     )
     metal = models.CharField(
-        "Metallo predefinito",
+        _("Metallo predefinito"),
         max_length=20,
         choices=METAL_CHOICES,
         default="gold",
     )
     gem = models.CharField(
-        "Pietra",
+        _("Pietra"),
         max_length=20,
         choices=GEM_CHOICES,
         default="none",
         blank=True,
     )
     purity = models.CharField(
-        "Purezza",
+        _("Purezza"),
         max_length=20,
         default="18K",
-        help_text="Es. 18K, 925, etc.",
+        help_text=_("Es. 18K, 925, etc."),
     )
-    is_active = models.BooleanField("Attivo", default=True, db_index=True)
-    is_featured = models.BooleanField("In evidenza", default=False, db_index=True)
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    is_active = models.BooleanField(_("Attivo"), default=True, db_index=True)
+    is_featured = models.BooleanField(_("In evidenza"), default=False, db_index=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
+    history = HistoricalRecords()
 
     class Meta:
-        verbose_name = "Prodotto"
-        verbose_name_plural = "Prodotti"
+        verbose_name = _("Prodotto")
+        verbose_name_plural = _("Prodotti")
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["category", "is_active"]),
@@ -132,7 +137,10 @@ class Product(models.Model):
     @property
     def primary_image(self):
         """Return the primary ProductImage, or the first one."""
-        return self.images.filter(is_primary=True).first() or self.images.first()
+        images = list(self.images.all())
+        return next((image for image in images if image.is_primary), None) or (
+            images[0] if images else None
+        )
 
 
 class ProductVariant(models.Model):
@@ -152,41 +160,42 @@ class ProductVariant(models.Model):
         Product,
         on_delete=models.CASCADE,
         related_name="variants",
-        verbose_name="Prodotto",
+        verbose_name=_("Prodotto"),
     )
-    metal = models.CharField("Metallo", max_length=20, choices=METAL_CHOICES)
+    metal = models.CharField(_("Metallo"), max_length=20, choices=METAL_CHOICES)
     size = models.CharField(
-        "Misura",
+        _("Misura"),
         max_length=20,
-        help_text="Es. 50, 52, 54 per anelli; Unica per collane.",
+        help_text=_("Es. 50, 52, 54 per anelli; Unica per collane."),
     )
     sku = models.CharField(
-        "SKU",
+        _("SKU"),
         max_length=50,
         unique=True,
         db_index=True,
     )
     price_override = models.DecimalField(
-        "Prezzo personalizzato",
+        _("Prezzo personalizzato"),
         max_digits=10,
         decimal_places=2,
         null=True,
         blank=True,
-        help_text="Se impostato, sovrascrive il prezzo base del prodotto.",
+        help_text=_("Se impostato, sovrascrive il prezzo base del prodotto."),
     )
-    stock_quantity = models.PositiveIntegerField("Quantità in stock", default=0)
+    stock_quantity = models.PositiveIntegerField(_("Quantità in stock"), default=0)
     reserved_quantity = models.PositiveIntegerField(
-        "Quantità riservata",
+        _("Quantità riservata"),
         default=0,
-        help_text="Stock riservato da carrelli attivi (gestito da cart/services.py).",
+        help_text=_("Stock riservato da carrelli attivi (gestito da cart/services.py)."),
     )
-    is_active = models.BooleanField("Attiva", default=True, db_index=True)
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
-    updated_at = models.DateTimeField("Aggiornato il", auto_now=True)
+    is_active = models.BooleanField(_("Attiva"), default=True, db_index=True)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("Aggiornato il"), auto_now=True)
+    history = HistoricalRecords()
 
     class Meta:
-        verbose_name = "Variante"
-        verbose_name_plural = "Varianti"
+        verbose_name = _("Variante")
+        verbose_name_plural = _("Varianti")
         unique_together = [("product", "metal", "size")]
         ordering = ["metal", "size"]
         indexes = [
@@ -222,34 +231,100 @@ class ProductImage(models.Model):
         Product,
         on_delete=models.CASCADE,
         related_name="images",
-        verbose_name="Prodotto",
+        verbose_name=_("Prodotto"),
+    )
+    media_asset = models.ForeignKey(
+        "MediaAsset",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="product_images",
+        verbose_name=_("Risorsa multimediale"),
     )
     image = models.ImageField(
-        "Immagine principale",
+        _("Immagine principale"),
         upload_to="products/",
-        help_text="Foto principale (1:1, soggetto centrato).",
+        blank=True,
+        help_text=_("Foto principale (1:1, soggetto centrato)."),
     )
     image_alt = models.ImageField(
-        "Immagine alternativa (hover)",
+        _("Immagine alternativa (hover)"),
         upload_to="products/",
         blank=True,
         null=True,
-        help_text="Seconda foto per hover-swap (stesso formato 1:1).",
+        help_text=_("Seconda foto per hover-swap (stesso formato 1:1)."),
     )
     alt_text = models.CharField(
-        "Testo alternativo",
+        _("Testo alternativo"),
         max_length=200,
         blank=True,
-        help_text="Descrizione per accessibilità.",
+        help_text=_("Descrizione per accessibilità."),
     )
-    is_primary = models.BooleanField("Immagine principale", default=False)
-    sort_order = models.PositiveIntegerField("Ordine", default=0)
-    created_at = models.DateTimeField("Creato il", auto_now_add=True)
+    is_primary = models.BooleanField(_("Immagine principale"), default=False)
+    sort_order = models.PositiveIntegerField(_("Ordine"), default=0)
+    created_at = models.DateTimeField(_("Creato il"), auto_now_add=True)
+    history = HistoricalRecords()
 
     class Meta:
-        verbose_name = "Immagine prodotto"
-        verbose_name_plural = "Immagini prodotto"
+        verbose_name = _("Immagine prodotto")
+        verbose_name_plural = _("Immagini prodotto")
         ordering = ["sort_order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product"],
+                condition=Q(is_primary=True),
+                name="catalog_one_primary_image_per_product",
+            ),
+            models.UniqueConstraint(
+                fields=["product", "media_asset"],
+                condition=Q(media_asset__isnull=False),
+                name="catalog_unique_product_media_asset",
+            ),
+        ]
 
     def __str__(self):
         return f"Immagine {self.sort_order} — {self.product.name}"
+
+
+class MediaAsset(models.Model):
+    """Sanitized, responsive WebP rendition set stored in the admin media bucket."""
+
+    object_key_400 = models.CharField(max_length=512, unique=True)
+    object_key_800 = models.CharField(max_length=512, unique=True)
+    object_key_1600 = models.CharField(max_length=512, unique=True)
+    original_size_bytes = models.PositiveIntegerField()
+    width = models.PositiveIntegerField()
+    height = models.PositiveIntegerField()
+    alt_text = models.CharField(max_length=200, blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_catalog_media",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"Media {self.pk}"
+
+
+class PendingMediaUpload(models.Model):
+    """A short-lived, manager-owned object key awaiting server-side validation."""
+
+    object_key = models.CharField(max_length=512, unique=True)
+    content_type = models.CharField(max_length=32)
+    declared_size_bytes = models.PositiveIntegerField()
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="pending_catalog_media_uploads",
+    )
+    expires_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

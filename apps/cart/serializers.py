@@ -2,6 +2,7 @@
 GLORYBELLE — Cart Serializers.
 """
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 
 from apps.catalog.serializers import ProductVariantSerializer
 
@@ -44,7 +45,8 @@ class CartItemSerializer(serializers.ModelSerializer):
             "primary_image",
         ]
 
-    def get_primary_image(self, obj):
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_primary_image(self, obj) -> str | None:
         img = obj.variant.product.primary_image
         if img and img.image:
             request = self.context.get("request")
