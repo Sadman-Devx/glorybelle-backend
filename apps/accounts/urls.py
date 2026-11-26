@@ -6,11 +6,12 @@ New: first-purchase-discount endpoint.
 """
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     AddressViewSet,
     FirstPurchaseDiscountView,
+    LoginView,
     LogoutView,
     MeView,
     PasswordResetConfirmView,
@@ -24,7 +25,7 @@ router.register(r"accounts/addresses", AddressViewSet, basename="address")
 urlpatterns = [
     # Auth
     path("accounts/register/", RegisterView.as_view(), name="register"),
-    path("accounts/login/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("accounts/login/", LoginView.as_view(), name="token_obtain_pair"),
     path("accounts/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("accounts/logout/", LogoutView.as_view(), name="logout"),
     path("accounts/password/reset/", PasswordResetView.as_view(), name="password-reset"),

@@ -161,6 +161,7 @@ def send_order_confirmation_email(self, order_id):
         return
 
     try:
+        from django.utils.html import escape
         from sendgrid import SendGridAPIClient
         from sendgrid.helpers.mail import Mail
 
@@ -169,8 +170,8 @@ def send_order_confirmation_email(self, order_id):
         for item in order.items.all():
             items_html += (
                 f"<tr>"
-                f"<td>{item.product_name}</td>"
-                f"<td>{item.variant_metal_display}, {item.variant_size}</td>"
+                f"<td>{escape(item.product_name)}</td>"
+                f"<td>{escape(item.variant_metal_display)}, {escape(item.variant_size)}</td>"
                 f"<td>{item.quantity}</td>"
                 f"<td>€{item.unit_price:.2f}</td>"
                 f"<td>€{item.line_total:.2f}</td>"
@@ -178,8 +179,8 @@ def send_order_confirmation_email(self, order_id):
             )
 
         html_content = f"""
-        <h2>Grazie per il tuo ordine, {order.shipping_first_name}!</h2>
-        <p>Il tuo ordine <strong>{order.order_number}</strong> è stato confermato.</p>
+        <h2>Grazie per il tuo ordine, {escape(order.shipping_first_name)}!</h2>
+        <p>Il tuo ordine <strong>{escape(order.order_number)}</strong> è stato confermato.</p>
 
         <table border="1" cellpadding="8" cellspacing="0"
                style="border-collapse: collapse; width: 100%;">
@@ -199,8 +200,8 @@ def send_order_confirmation_email(self, order_id):
 
         <p><strong>Totale: €{order.total:.2f}</strong></p>
 
-        <p>Spedizione: {order.shipping_line1}, {order.shipping_city}
-        ({order.shipping_province}) {order.shipping_postal_code}</p>
+        <p>Spedizione: {escape(order.shipping_line1)}, {escape(order.shipping_city)}
+        ({escape(order.shipping_province)}) {escape(order.shipping_postal_code)}</p>
 
         <p>Grazie per aver scelto GLORYBELLE.</p>
         """

@@ -41,6 +41,14 @@ class PaymentError(APIException):
     default_code = "payment_error"
 
 
+class PaymentServiceUnavailable(APIException):
+    """The payment provider could not be reached; the customer should simply retry."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Servizio di pagamento temporaneamente non disponibile. Riprova tra qualche istante."
+    default_code = "payment_unavailable"
+
+
 class DuplicateWebhookEvent(APIException):
     """Raised when a webhook event has already been processed."""
 

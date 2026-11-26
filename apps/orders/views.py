@@ -18,6 +18,7 @@ from django.db.models import Count
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.cart.views import _get_cart
@@ -25,7 +26,12 @@ from apps.payments.stripe_client import create_payment_intent
 
 from . import services
 from .models import Order
-from .serializers import CheckoutSerializer, OrderListSerializer, OrderSerializer
+from .serializers import (
+    CheckoutSerializer,
+    OrderGuestLookupSerializer,
+    OrderListSerializer,
+    OrderSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,3 +160,38 @@ class OrderDetailView(generics.RetrieveAPIView):
         return Order.objects.filter(user=self.request.user).prefetch_related(
             "items"
         )
+
+
+class OrderGuestLookupView(APIView):
+    """
+    POST /api/orders/lookup/   body: {order_number, email}
+
+    Lets a GUEST (no account) read back the order they just placed, so the
+    confirmation page can poll its payment status. Both fields must match;
+    any mismatch returns the same generic 404 so order numbers cannot be
+    probed. Rate limited (scope ``order_lookup``).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "order_lookup"
+    serializer_class = OrderGuestLookupSerializer
+
+    def post(self, request):
+        serializer = OrderGuestLookupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = (
+            Order.objects.filter(
+                order_number=serializer.validated_data["order_number"].strip(),
+                email__iexact=serializer.validated_data["email"].strip(),
+            )
+            .prefetch_related("items")
+            .first()
+        )
+        if order is None:
+            return Response(
+                {"error": {"code": "not_found", "detail": "Ordine non trovato."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(OrderSerializer(order).data)

@@ -66,6 +66,7 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
         cache_key = make_cache_key(
             CATEGORY_LIST_PREFIX,
             page=request.query_params.get("page", "1"),
+            page_size=request.query_params.get("page_size"),
         )
         cached_response = get_cached(cache_key)
         if cached_response is not None:
@@ -112,17 +113,15 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     def list(self, request, *args, **kwargs):
         """List products — cached per filter combination (P1 fix #14)."""
         # Build a cache key from all filter parameters
+        # Every parameter that changes the RESULT must be in the key — including
+        # page_size, otherwise ?page_size=100 is served the cached 8-item page.
+        # Only known parameters are used so random query strings cannot flood the cache.
+        key_params = set(ProductFilter.base_filters) | {
+            "search", "ordering", "page", "page_size",
+        }
         cache_key = make_cache_key(
             PRODUCT_LIST_PREFIX,
-            category=request.query_params.get("category"),
-            metal=request.query_params.get("metal"),
-            gem=request.query_params.get("gem"),
-            min_price=request.query_params.get("min_price"),
-            max_price=request.query_params.get("max_price"),
-            featured=request.query_params.get("featured"),
-            search=request.query_params.get("search"),
-            ordering=request.query_params.get("ordering"),
-            page=request.query_params.get("page", "1"),
+            **{name: request.query_params.get(name) for name in key_params},
         )
         cached_response = get_cached(cache_key)
         if cached_response is not None:

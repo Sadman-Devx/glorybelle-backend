@@ -10,8 +10,22 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import Address, CustomerProfile
+
+
+def validate_age_from_birth_date(value):
+    """Shared rule: 13 <= age <= 120 (registration AND profile updates)."""
+    from datetime import date
+
+    today = date.today()
+    age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+    if age < 13:
+        raise serializers.ValidationError("Devi avere almeno 13 anni per registrarti.")
+    if age > 120:
+        raise serializers.ValidationError("Data di nascita non valida.")
+    return value
 
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
@@ -35,6 +49,11 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "username", "email", "first_name", "last_name", "created_at"]
+
+    def validate_date_of_birth(self, value):
+        if value is not None:
+            validate_age_from_birth_date(value)
+        return value
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -68,22 +87,15 @@ class RegisterSerializer(serializers.Serializer):
         return value
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        # Emails are case-insensitive: A@x.com and a@x.com are the same mailbox.
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("Questa email è già registrata.")
         return value
 
     def validate_birth_date(self, value):
-        """Validate birth_date — must be at least 13 years old (COPPA-equivalent)."""
-        from datetime import date
-        today = date.today()
-        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
-        if age < 13:
-            raise serializers.ValidationError(
-                "Devi avere almeno 13 anni per registrarti."
-            )
-        if age > 120:
-            raise serializers.ValidationError("Data di nascita non valida.")
-        return value
+        """Must be at least 13 years old (COPPA-equivalent)."""
+        return validate_age_from_birth_date(value)
 
     def validate(self, data):
         if data["password"] != data["password_confirm"]:
@@ -182,3 +194,44 @@ class FirstPurchaseDiscountSerializer(serializers.Serializer):
     eligible = serializers.BooleanField()
     percent = serializers.DecimalField(max_digits=5, decimal_places=2)
     message = serializers.CharField(allow_blank=True)
+
+
+class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    JWT login that accepts EITHER ``email`` or ``username`` plus ``password``.
+
+    The storefront login form asks for an email address, while SimpleJWT's
+    default serializer only understands ``username``. Email matching is
+    case-insensitive. Failure is always the generic SimpleJWT 401 so the
+    endpoint does not reveal whether an email exists.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields[self.username_field].required = False
+        self.fields["email"] = serializers.CharField(required=False, write_only=True)
+
+    def validate(self, attrs):
+        username = (attrs.get(self.username_field) or "").strip()
+        email = (attrs.get("email") or "").strip()
+        password = attrs.get("password")
+
+        if not username and not email:
+            raise serializers.ValidationError(
+                {"email": "Inserisci email o username."}
+            )
+
+        if not username:
+            candidates = list(
+                User.objects.filter(email__iexact=email, is_active=True).order_by("id")
+            )
+            # Pick the account whose password matches (handles legacy accounts
+            # that share an email address differing only by case).
+            matched = next((u for u in candidates if u.check_password(password)), None)
+            chosen = matched or (candidates[0] if candidates else None)
+            # Unknown email -> keep a value so SimpleJWT raises its generic 401.
+            username = chosen.get_username() if chosen else email
+
+        return super().validate(
+            {self.username_field: username, "password": password}
+        )

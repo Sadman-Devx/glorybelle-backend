@@ -22,6 +22,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from rest_framework.exceptions import NotFound
 
 from apps.catalog.models import ProductVariant
 from core.exceptions import OutOfStock
@@ -66,10 +67,13 @@ def add_to_cart(cart, variant_id, quantity=1):
     """
     with transaction.atomic():
         # Step 1: Lock the variant row to prevent concurrent modification
-        variant = (
-            ProductVariant.objects.select_for_update()
-            .get(id=variant_id, is_active=True)
-        )
+        try:
+            variant = (
+                ProductVariant.objects.select_for_update()
+                .get(id=variant_id, is_active=True)
+            )
+        except ProductVariant.DoesNotExist:
+            raise NotFound(detail="Variante non trovata.")
 
         # Step 2: Check real availability
         available = variant.stock_quantity - variant.reserved_quantity
@@ -173,9 +177,12 @@ def update_cart_item_quantity(cart, cart_item_id, new_quantity):
         return remove_from_cart(cart, cart_item_id)
 
     with transaction.atomic():
-        cart_item = CartItem.objects.select_related("variant").get(
-            id=cart_item_id, cart=cart
-        )
+        try:
+            cart_item = CartItem.objects.select_related("variant").get(
+                id=cart_item_id, cart=cart
+            )
+        except CartItem.DoesNotExist:
+            raise NotFound(detail="Articolo non trovato nel carrello.")
         current_qty = cart_item.quantity
         delta = new_quantity - current_qty
 

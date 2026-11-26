@@ -12,10 +12,11 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from apps.accounts.models import Address
 from apps.cart.models import StockReservation
-from core.exceptions import CartEmpty, ReservationExpired
+from core.exceptions import CartEmpty, PaymentServiceUnavailable, ReservationExpired
 
 from .models import Order, OrderItem
 
@@ -94,6 +95,62 @@ def calculate_discount(subtotal: Decimal, user) -> tuple[Decimal, Decimal]:
     return discount_percent, discount_amount
 
 
+def _release_first_purchase_discount_holds(user) -> bool:
+    """
+    Guarantee a user never holds more than ONE open first-purchase-discount order.
+
+    The discount is priced into the Stripe PaymentIntent at checkout, so it
+    cannot be taken back afterwards. Without this, a customer could create
+    several pending orders (each at 10% off) and pay them all. Before a new
+    order may take the discount, any earlier PENDING order of the same user
+    that still carries it is superseded: its PaymentIntent is cancelled at
+    Stripe FIRST and only then is the order cancelled.
+
+    Returns False when an earlier discounted order cannot be proven cancelled
+    (payment already succeeded / processing, or Stripe unreachable). The new
+    order is then created WITHOUT the discount — the safe default for money.
+
+    Must run inside transaction.atomic() with the user row locked, so two
+    parallel checkouts by one user are serialised.
+    """
+    from apps.payments.models import Payment
+    from apps.payments.stripe_client import (
+        PaymentIntentNotCancellable,
+        cancel_payment_intent,
+    )
+
+    open_orders = Order.objects.select_for_update().filter(
+        user=user, status="pending", discount_amount__gt=0
+    )
+    for old in open_orders:
+        payment = Payment.objects.filter(order=old).first()
+        if payment is not None and payment.status == "pending":
+            try:
+                cancel_payment_intent(payment.stripe_payment_intent_id)
+            except PaymentIntentNotCancellable as exc:
+                if exc.retryable:
+                    # Stripe is unreachable: we cannot know whether the earlier
+                    # intent is payable. Creating the new PaymentIntent would fail
+                    # moments later anyway, so ask the customer to retry instead of
+                    # quietly withholding a discount they are entitled to.
+                    raise PaymentServiceUnavailable() from exc
+                logger.warning(
+                    "Order %s still holds the first-purchase discount and its "
+                    "PaymentIntent cannot be cancelled — new order gets no discount",
+                    old.order_number,
+                )
+                return False
+            payment.status = "failed"
+            payment.save(update_fields=["status", "updated_at"])
+        old.status = "cancelled"
+        old.save(update_fields=["status", "updated_at"])
+        logger.info(
+            "Order %s superseded by a newer checkout (first-purchase discount moved)",
+            old.order_number,
+        )
+    return True
+
+
 def create_order_from_cart(
     cart,
     email,
@@ -138,14 +195,16 @@ def create_order_from_cart(
         try:
             shipping_addr = Address.objects.get(id=shipping_address_id, user=user)
         except Address.DoesNotExist:
-            raise ValueError(
-                f"Indirizzo di spedizione {shipping_address_id} non trovato."
+            raise ValidationError(
+                {"shipping_address_id": "Indirizzo di spedizione non trovato."}
             )
         shipping = _snapshot_address(shipping_addr)
     elif shipping_address_data:
         shipping = shipping_address_data
     else:
-        raise ValueError("Shipping address is required.")
+        raise ValidationError(
+            {"shipping_address": "È necessario un indirizzo di spedizione."}
+        )
 
     # Resolve billing address
     if billing_same_as_shipping:
@@ -154,8 +213,8 @@ def create_order_from_cart(
         try:
             billing_addr = Address.objects.get(id=billing_address_id, user=user)
         except Address.DoesNotExist:
-            raise ValueError(
-                f"Indirizzo di fatturazione {billing_address_id} non trovato."
+            raise ValidationError(
+                {"billing_address_id": "Indirizzo di fatturazione non trovato."}
             )
         billing = _snapshot_address(billing_addr)
     elif billing_address_data:
@@ -185,8 +244,15 @@ def create_order_from_cart(
                 "line_total": line_total,
             })
 
-        # Calculate discount (NEW — first-purchase 10% off)
-        discount_percent, discount_amount = calculate_discount(subtotal, user)
+        # Calculate discount (first-purchase 10% off) — at most ONE open
+        # discounted order per user (see _release_first_purchase_discount_holds).
+        discount_percent, discount_amount = Decimal("0.00"), Decimal("0.00")
+        if user and user.is_authenticated:
+            from django.contrib.auth import get_user_model
+
+            get_user_model().objects.select_for_update().get(pk=user.pk)
+            if _release_first_purchase_discount_holds(user):
+                discount_percent, discount_amount = calculate_discount(subtotal, user)
 
         # Shipping cost — free shipping for now
         shipping_cost = Decimal("0.00")

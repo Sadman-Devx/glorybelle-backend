@@ -14,6 +14,8 @@ from django.conf import settings
 
 from apps.payments.models import Payment
 
+from core.exceptions import PaymentServiceUnavailable
+
 logger = logging.getLogger(__name__)
 
 # Configure Stripe — set per-call instead of module-load so test/live key
@@ -89,7 +91,45 @@ def create_payment_intent(order):
             order.order_number,
             str(e),
         )
-        raise
+        # The storefront gets a clean 503 ("retry shortly") instead of an HTML 500.
+        raise PaymentServiceUnavailable() from e
+
+
+class PaymentIntentNotCancellable(Exception):
+    """
+    The PaymentIntent could not be proven cancelled.
+
+    ``retryable`` tells the two situations apart:
+      * False -> Stripe answered: the intent is paid / processing / in a final state.
+                 The customer may genuinely have paid it.
+      * True  -> Stripe could not be reached (network, 5xx, rate limit). Nothing is
+                 known about the intent, so the caller should ask the customer to retry
+                 instead of silently taking a decision.
+    """
+
+    def __init__(self, message="", retryable=False):
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def cancel_payment_intent(payment_intent_id):
+    """
+    Cancel a PaymentIntent so it can never be paid.
+
+    A PaymentIntent that no longer exists at Stripe counts as cancelled.
+    Any other failure raises PaymentIntentNotCancellable (see ``retryable``).
+    """
+    stripe = _get_stripe()
+    try:
+        stripe.PaymentIntent.cancel(payment_intent_id)
+    except (stripe.error.APIConnectionError, stripe.error.APIError, stripe.error.RateLimitError) as e:
+        raise PaymentIntentNotCancellable(str(e), retryable=True) from e
+    except stripe.error.InvalidRequestError as e:
+        if getattr(e, "code", None) == "resource_missing":
+            return
+        raise PaymentIntentNotCancellable(str(e), retryable=False) from e
+    except stripe.error.StripeError as e:
+        raise PaymentIntentNotCancellable(str(e), retryable=False) from e
 
 
 def verify_webhook_signature(payload, sig_header):
