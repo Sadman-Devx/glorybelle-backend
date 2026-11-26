@@ -32,6 +32,10 @@ from .models import Payment, ProcessedWebhookEvent
 logger = logging.getLogger(__name__)
 
 
+class _PaymentNotFound(Exception):
+    """Raised inside the atomic block so the ProcessedWebhookEvent row is rolled back."""
+
+
 def _is_event_processed(stripe_event_id):
     """Check if this webhook event has already been processed."""
     return ProcessedWebhookEvent.objects.filter(
@@ -119,6 +123,10 @@ def handle_payment_succeeded(event):
 
     Per roadmap Day 7: "replaying the same webhook payload twice results
     in the order being marked paid exactly once, not double-processed."
+
+    Returns False (-> HTTP 500, so Stripe retries) when no Payment matches the
+    PaymentIntent. In that case the whole transaction is rolled back, so the
+    event is NOT recorded as processed and the retry is handled for real.
     """
     stripe_event_id = event["id"]
     payment_intent = event["data"]["object"]
@@ -137,75 +145,23 @@ def handle_payment_succeeded(event):
         )
         return True  # Already processed, return success
 
-    with transaction.atomic():
-        # Record the event FIRST to prevent double-processing
-        ProcessedWebhookEvent.objects.create(
-            stripe_event_id=stripe_event_id,
-            event_type="payment_intent.succeeded",
-        )
-
-        # Find the Payment and Order
-        try:
-            payment = Payment.objects.select_for_update().get(
-                stripe_payment_intent_id=payment_intent_id
+    try:
+        with transaction.atomic():
+            order = _mark_order_paid(
+                stripe_event_id, payment_intent_id, stripe_charge_id
             )
-        except Payment.DoesNotExist:
-            logger.error(
-                "No Payment found for PaymentIntent %s", payment_intent_id
-            )
-            return False
+    except _PaymentNotFound:
+        logger.error("No Payment found for PaymentIntent %s", payment_intent_id)
+        return False
 
-        order = payment.order
+    if order is None:  # duplicate delivery of an already-succeeded PaymentIntent
+        return True
 
-        # Update Payment
-        payment.status = "succeeded"
-        payment.stripe_charge_id = stripe_charge_id
-        payment.save(update_fields=["status", "stripe_charge_id", "updated_at"])
-
-        # Update Order status
-        order.status = "paid"
-        order.save(update_fields=["status", "updated_at"])
-
-        # Step 3: Convert reservations into actual stock deductions
-        # For each order item, decrement the real stock and deactivate reservations
-        for order_item in order.items.all():
-            variant = (
-                ProductVariant.objects.select_for_update()
-                .get(id=order_item.variant_id)
-            )
-
-            # Decrement actual stock
-            variant.stock_quantity = max(
-                0, variant.stock_quantity - order_item.quantity
-            )
-
-            # Find and deactivate ONLY this order's reservations for this variant.
-            # P0 fix #3 — previous code matched by user alone, releasing reservations
-            # from OTHER orders if the user had multiple carts in flight, and failed
-            # entirely for guest orders (order.user=None).
-            total_released = _release_reservations_for_order(order, variant)
-
-            # Decrement reserved_quantity (never below 0)
-            variant.reserved_quantity = max(
-                0, variant.reserved_quantity - total_released
-            )
-            variant.save(
-                update_fields=["stock_quantity", "reserved_quantity"]
-            )
-
-        # Step 4: Clear the user's cart (only for logged-in users — guest
-        # carts are cleared by the periodic expiry task to avoid race conditions).
-        if order.user:
-            Cart.objects.filter(user=order.user).delete()
-
-        logger.info(
-            "Payment succeeded for order %s (PaymentIntent %s)",
-            order.order_number,
-            payment_intent_id,
-        )
-
-    # Step 5: Queue async tasks OUTSIDE the transaction
-    # Per rule.md: never call external services synchronously
+    # Step 5: Queue async tasks OUTSIDE the transaction.
+    # Per rule.md: never call external services synchronously. A broker outage
+    # must not turn an already-committed payment into an HTTP 500 (Stripe's
+    # retry would be skipped as "already processed" and nothing would be sent),
+    # so queueing failures are logged loudly instead of raised.
     try:
         from apps.invoicing.tasks import (
             generate_invoice,
@@ -219,8 +175,96 @@ def handle_payment_succeeded(event):
             "Invoicing tasks not available — skipping async tasks for order %s",
             order.order_number,
         )
+    except Exception:  # noqa: BLE001 — broker/connection errors of any kind
+        logger.exception(
+            "Could not queue confirmation email / invoice for PAID order %s — "
+            "re-queue manually",
+            order.order_number,
+        )
 
     return True
+
+
+def _mark_order_paid(stripe_event_id, payment_intent_id, stripe_charge_id):
+    """
+    Runs inside transaction.atomic(). Returns the Order that was just marked
+    paid, or None if this PaymentIntent had already succeeded.
+    Raises _PaymentNotFound (rolling everything back) for an unknown PaymentIntent.
+    """
+    # Record the event FIRST to prevent double-processing
+    ProcessedWebhookEvent.objects.create(
+        stripe_event_id=stripe_event_id,
+        event_type="payment_intent.succeeded",
+    )
+
+    try:
+        payment = Payment.objects.select_for_update().get(
+            stripe_payment_intent_id=payment_intent_id
+        )
+    except Payment.DoesNotExist:
+        raise _PaymentNotFound(payment_intent_id)
+
+    # Same PaymentIntent delivered again under a NEW event id: stock must not
+    # be deducted twice.
+    if payment.status == "succeeded":
+        logger.info(
+            "PaymentIntent %s already succeeded — event %s ignored",
+            payment_intent_id,
+            stripe_event_id,
+        )
+        return None
+
+    order = payment.order
+    if order.status == "cancelled":
+        # Customer paid an order that had been cancelled (e.g. superseded by a
+        # newer checkout). The money is real, so it is recorded as paid — but
+        # make it impossible to miss.
+        logger.error(
+            "PAYMENT RECEIVED FOR CANCELLED ORDER %s (%s) — fulfil or refund manually",
+            order.order_number,
+            payment_intent_id,
+        )
+
+    payment.status = "succeeded"
+    payment.stripe_charge_id = stripe_charge_id
+    payment.save(update_fields=["status", "stripe_charge_id", "updated_at"])
+
+    order.status = "paid"
+    order.save(update_fields=["status", "updated_at"])
+
+    # Step 3: Convert reservations into actual stock deductions
+    for order_item in order.items.all():
+        variant = (
+            ProductVariant.objects.select_for_update()
+            .get(id=order_item.variant_id)
+        )
+
+        # Decrement actual stock
+        variant.stock_quantity = max(
+            0, variant.stock_quantity - order_item.quantity
+        )
+
+        # Find and deactivate ONLY this order's reservations for this variant.
+        # P0 fix #3 — scoped to this order, never other customers' carts.
+        total_released = _release_reservations_for_order(order, variant)
+
+        # Decrement reserved_quantity (never below 0)
+        variant.reserved_quantity = max(
+            0, variant.reserved_quantity - total_released
+        )
+        variant.save(update_fields=["stock_quantity", "reserved_quantity"])
+
+    # Step 4: Clear the user's cart (only for logged-in users — guest carts are
+    # cleared by the storefront after payment / the periodic expiry task).
+    if order.user:
+        Cart.objects.filter(user=order.user).delete()
+
+    logger.info(
+        "Payment succeeded for order %s (PaymentIntent %s)",
+        order.order_number,
+        payment_intent_id,
+    )
+    return order
 
 
 def handle_payment_failed(event):
@@ -228,12 +272,12 @@ def handle_payment_failed(event):
     Handle a payment_intent.payment_failed webhook event.
 
     Marks the Payment as failed, Order as cancelled, and releases
-    stock reservations.
+    stock reservations (scoped to this order — P0 fix #2).
 
-    P0 fix #2 — previous code released ALL active reservations for a variant
-    across ALL carts, not just the failed order's. One customer's failed
-    payment would silently release another customer's in-progress cart
-    reservation. Now scoped to this order via _release_reservations_for_order.
+    Like the success handler, an unknown PaymentIntent rolls the transaction
+    back (event not marked processed) and returns False so Stripe retries.
+    A failure event for a payment that has ALREADY succeeded is ignored: a late
+    or out-of-order failure must never cancel a paid order.
     """
     stripe_event_id = event["id"]
     payment_intent = event["data"]["object"]
@@ -245,51 +289,57 @@ def handle_payment_failed(event):
         )
         return True
 
-    with transaction.atomic():
-        ProcessedWebhookEvent.objects.create(
-            stripe_event_id=stripe_event_id,
-            event_type="payment_intent.payment_failed",
+    try:
+        with transaction.atomic():
+            ProcessedWebhookEvent.objects.create(
+                stripe_event_id=stripe_event_id,
+                event_type="payment_intent.payment_failed",
+            )
+
+            try:
+                payment = Payment.objects.select_for_update().get(
+                    stripe_payment_intent_id=payment_intent_id
+                )
+            except Payment.DoesNotExist:
+                raise _PaymentNotFound(payment_intent_id)
+
+            if payment.status == "succeeded":
+                logger.warning(
+                    "Failure event %s for already-succeeded PaymentIntent %s ignored",
+                    stripe_event_id,
+                    payment_intent_id,
+                )
+                return True
+
+            order = payment.order
+
+            payment.status = "failed"
+            payment.save(update_fields=["status", "updated_at"])
+
+            order.status = "cancelled"
+            order.save(update_fields=["status", "updated_at"])
+
+            for order_item in order.items.all():
+                variant = (
+                    ProductVariant.objects.select_for_update()
+                    .get(id=order_item.variant_id)
+                )
+
+                total_released = _release_reservations_for_order(order, variant)
+
+                variant.reserved_quantity = max(
+                    0, variant.reserved_quantity - total_released
+                )
+                variant.save(update_fields=["reserved_quantity"])
+
+            logger.info(
+                "Payment failed for order %s — reservations released (scoped to this order)",
+                order.order_number,
+            )
+    except _PaymentNotFound:
+        logger.error(
+            "No Payment found for failed PaymentIntent %s", payment_intent_id
         )
-
-        try:
-            payment = Payment.objects.select_for_update().get(
-                stripe_payment_intent_id=payment_intent_id
-            )
-        except Payment.DoesNotExist:
-            logger.error(
-                "No Payment found for failed PaymentIntent %s",
-                payment_intent_id,
-            )
-            return False
-
-        order = payment.order
-
-        payment.status = "failed"
-        payment.save(update_fields=["status", "updated_at"])
-
-        order.status = "cancelled"
-        order.save(update_fields=["status", "updated_at"])
-
-        # Release ONLY this order's reservations — NOT every reservation for the variant.
-        # P0 fix #2: previous code matched by variant alone, ignoring the order/user/cart,
-        # so a single failed payment released every other customer's reservation for
-        # that variant.
-        for order_item in order.items.all():
-            variant = (
-                ProductVariant.objects.select_for_update()
-                .get(id=order_item.variant_id)
-            )
-
-            total_released = _release_reservations_for_order(order, variant)
-
-            variant.reserved_quantity = max(
-                0, variant.reserved_quantity - total_released
-            )
-            variant.save(update_fields=["reserved_quantity"])
-
-        logger.info(
-            "Payment failed for order %s — reservations released (scoped to this order)",
-            order.order_number,
-        )
+        return False
 
     return True

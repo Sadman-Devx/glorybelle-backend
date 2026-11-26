@@ -135,6 +135,39 @@ class CheckoutSerializer(serializers.Serializer):
     billing_address_id = serializers.IntegerField(required=False)
     billing_address = serializers.DictField(required=False)
 
+    # Max lengths mirror the Order model columns — longer input used to raise a
+    # database error (HTTP 500) instead of a validation error.
+    ADDRESS_LIMITS = {
+        "first_name": 100, "last_name": 100, "line1": 255, "line2": 255,
+        "city": 100, "province": 10, "postal_code": 10, "country": 2,
+    }
+    ADDRESS_REQUIRED = ["first_name", "last_name", "line1", "city", "province", "postal_code"]
+
+    def _clean_address(self, raw, label):
+        """Whitelist + bound an address dict; unknown keys (e.g. phone) are dropped."""
+        if not isinstance(raw, dict):
+            raise serializers.ValidationError({label: "Formato indirizzo non valido."})
+        cleaned = {}
+        for key, limit in self.ADDRESS_LIMITS.items():
+            value = raw.get(key, "")
+            if value is None:
+                value = ""
+            if not isinstance(value, str):
+                raise serializers.ValidationError({f"{label}.{key}": "Deve essere un testo."})
+            value = value.strip()
+            if len(value) > limit:
+                raise serializers.ValidationError(
+                    {f"{label}.{key}": f"Massimo {limit} caratteri."}
+                )
+            cleaned[key] = value
+        cleaned["country"] = (cleaned["country"] or "IT").upper()
+        for field in self.ADDRESS_REQUIRED:
+            if not cleaned[field]:
+                raise serializers.ValidationError(
+                    {f"{label}.{field}": "Questo campo è obbligatorio."}
+                )
+        return cleaned
+
     def validate(self, data):
         has_shipping_id = "shipping_address_id" in data
         has_shipping_data = "shipping_address" in data
@@ -145,14 +178,25 @@ class CheckoutSerializer(serializers.Serializer):
             )
 
         if has_shipping_data:
-            required_fields = [
-                "first_name", "last_name", "line1",
-                "city", "province", "postal_code",
-            ]
-            for field in required_fields:
-                if not data["shipping_address"].get(field):
-                    raise serializers.ValidationError(
-                        {f"shipping_address.{field}": "Questo campo è obbligatorio."}
-                    )
+            data["shipping_address"] = self._clean_address(
+                data["shipping_address"], "shipping_address"
+            )
+        if "billing_address" in data:
+            data["billing_address"] = self._clean_address(
+                data["billing_address"], "billing_address"
+            )
+
+        if not data.get("billing_same_as_shipping", True):
+            if "billing_address_id" not in data and "billing_address" not in data:
+                raise serializers.ValidationError(
+                    {"billing_address": "È necessario un indirizzo di fatturazione."}
+                )
 
         return data
+
+
+class OrderGuestLookupSerializer(serializers.Serializer):
+    """Input for POST /api/orders/lookup/ (guest order confirmation)."""
+
+    order_number = serializers.CharField(max_length=30)
+    email = serializers.EmailField()

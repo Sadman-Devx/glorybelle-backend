@@ -233,6 +233,8 @@ REST_FRAMEWORK = {
         "user": "1000/hour",
         "admin_login": "5/minute",
         "enquiry_create": "5/hour",
+        "order_lookup": "20/min",
+        "login": "10/min",
     },
 }
 

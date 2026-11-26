@@ -21,6 +21,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from core.permissions import IsOwner
 
@@ -28,6 +30,7 @@ from .models import Address, CustomerProfile
 from .serializers import (
     AddressSerializer,
     CustomerProfileSerializer,
+    EmailOrUsernameTokenObtainPairSerializer,
     FirstPurchaseDiscountSerializer,
     LogoutSerializer,
     PasswordResetConfirmSerializer,
@@ -70,6 +73,15 @@ class RegisterView(generics.CreateAPIView):
         )
 
 
+class LoginView(TokenObtainPairView):
+    """POST /api/accounts/login/  — body: {email | username, password}"""
+
+    serializer_class = EmailOrUsernameTokenObtainPairSerializer
+    # Password-guessing brake (the global anon limit is 1000/hour, far too loose).
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
+
 class LogoutView(APIView):
     """POST /api/accounts/logout/"""
 
@@ -106,36 +118,31 @@ class PasswordResetView(APIView):
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"]
 
-        try:
-            user = User.objects.get(email__iexact=email, is_active=True)
-        except User.DoesNotExist:
-            return Response(
-                {"detail": "Se l'email esiste, riceverai un link di reset."},
-                status=status.HTTP_202_ACCEPTED,
-            )
+        # .filter(): accounts created before email uniqueness became case-insensitive
+        # can share an address — .get() raised MultipleObjectsReturned (HTTP 500).
+        for user in User.objects.filter(email__iexact=email, is_active=True):
+            token = default_token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-        token = default_token_generator.make_token(user)
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
+            reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
 
-        reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
-
-        try:
-            plain_message = (
-                f"Hai richiesto di reimpostare la password del tuo account GLORYBELLE.\n\n"
-                f"Clicca sul seguente link per reimpostarla:\n{reset_url}\n\n"
-                f"Se non hai richiesto questo reset, ignora questa email.\n\n"
-                f"Team GLORYBELLE"
-            )
-            send_mail(
-                subject="GLORYBELLE — Reset della password",
-                message=plain_message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-            logger.info("Password reset email sent to %s", user.email)
-        except Exception as e:
-            logger.error("Failed to send password reset email: %s", e)
+            try:
+                plain_message = (
+                    f"Hai richiesto di reimpostare la password del tuo account GLORYBELLE.\n\n"
+                    f"Clicca sul seguente link per reimpostarla:\n{reset_url}\n\n"
+                    f"Se non hai richiesto questo reset, ignora questa email.\n\n"
+                    f"Team GLORYBELLE"
+                )
+                send_mail(
+                    subject="GLORYBELLE — Reset della password",
+                    message=plain_message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+                logger.info("Password reset email sent to %s", user.email)
+            except Exception as e:
+                logger.error("Failed to send password reset email: %s", e)
 
         return Response(
             {"detail": "Se l'email esiste, riceverai un link di reset."},

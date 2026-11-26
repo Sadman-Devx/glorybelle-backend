@@ -7,7 +7,7 @@ Supports both authenticated users and guest sessions.
 P1 fix #10: adds DELETE /api/cart/ (clear entire cart) endpoint.
 """
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
@@ -118,15 +118,21 @@ class CartItemView(APIView):
 
 class CartMergeView(APIView):
     """
-    POST /api/cart/merge/ → merge guest cart into user cart on login.
+    POST /api/cart/merge/ -> merge the guest cart of THIS browser session into
+    the authenticated user's cart (call right after login).
+
+    The guest cart is identified by the server-side Django session cookie
+    (HttpOnly, so the frontend cannot read it). A ``session_key`` in the body
+    is deliberately ignored: honouring a client-supplied key would let any
+    logged-in user pull another visitor's cart into their own.
     """
 
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     serializer_class = CartSerializer
 
     def post(self, request):
-        session_key = request.data.get("session_key")
-        if session_key and request.user.is_authenticated:
+        session_key = request.session.session_key
+        if session_key:
             services.merge_carts(session_key, request.user)
 
         cart = services.get_or_create_cart(user=request.user)

@@ -19,7 +19,8 @@ django-unfold>=0.40,<1.0
 psycopg2-binary>=2.9.9,<3.0
 
 # Cache / Broker
-redis>=5.0,<6.0
+# kombu 5.7 (pulled in by celery[redis]) refuses redis-py < 6.1 at runtime
+redis>=6.1,<7.0
 django-redis>=5.4,<6.0
 
 # Async task queue
