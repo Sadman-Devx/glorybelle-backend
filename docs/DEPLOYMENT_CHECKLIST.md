@@ -38,7 +38,26 @@ Errors must be fixed before going live; warnings are acceptable only when the fe
 2. Order becomes `paid`, stock drops, confirmation email arrives, an `Invoice` row appears.
 3. `celery -A config inspect ping` answers; `release_expired_reservations` runs every minute (celery beat).
 
+## 5. Storefront and API on different domains
+Guest carts are identified by the `X-Cart-Token` header (a random token the browser keeps in
+localStorage), **not** by a cookie, so they work when the storefront (`shop.example.com`) and the API
+(`api.example.com`) are different sites and when the browser blocks third-party cookies.
+* `CORS_ALLOWED_ORIGINS` must contain the storefront origin (the header is already allowed:
+  `CORS_ALLOW_HEADERS` includes `x-cart-token`).
+* The storefront must be built with `NEXT_PUBLIC_API_URL=https://api.example.com`.
+* Nothing else is needed — no `SameSite=None` cookie settings.
+
 ## Behaviour worth knowing
+* **Welcome discount** — a signed-in customer with no completed order gets **10% off ONE product** (a single
+  unit of the most expensive item in the cart), applied automatically; the cart (`discount`,
+  `total_after_discount`) shows exactly what checkout charges. There is **no expiry**: it still applies a month or a
+  year after registering, until the first order is paid. Change the percentage with `FIRST_PURCHASE_DISCOUNT_PERCENT`
+  (and an optional minimum basket with `FIRST_PURCHASE_DISCOUNT_MIN_SUBTOTAL`).
+* **Newsletter unsubscribe** — every newsletter e-mail carries its own signed link
+  (`<FRONTEND_URL>/newsletter/annulla-iscrizione?token=...`, also sent as a `List-Unsubscribe` header).
+  `POST /api/newsletter/unsubscribe/` only accepts that token; a bare e-mail address is rejected.
+  Make sure `FRONTEND_URL` is the public storefront URL (`check --deploy` warns otherwise).
+  Tokens are signed with `SECRET_KEY`: rotating the key invalidates links in e-mails already sent.
 * **First-purchase discount** — a customer holds at most one open (unpaid) discounted order. Starting a new
   checkout cancels the previous pending one, **including its Stripe PaymentIntent**. If that PaymentIntent is
   already paid / processing, the new order is created without the discount (the earlier order already used it).

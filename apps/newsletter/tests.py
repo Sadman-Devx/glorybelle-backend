@@ -4,6 +4,7 @@ GLORYBELLE — Newsletter Tests.
 import pytest
 
 from apps.newsletter.models import NewsletterSubscriber
+from apps.newsletter.tokens import make_unsubscribe_token
 
 
 @pytest.mark.django_db
@@ -44,10 +45,10 @@ class TestNewsletterSubscribe:
             {"email": "cliente@glorybelle.it"},
             format="json",
         )
-        # Unsubscribe
+        # Unsubscribe (with the signed token from the e-mail link)
         api_client.post(
             "/api/newsletter/unsubscribe/",
-            {"email": "cliente@glorybelle.it"},
+            {"token": make_unsubscribe_token("cliente@glorybelle.it")},
             format="json",
         )
         assert not NewsletterSubscriber.objects.get(
@@ -75,7 +76,7 @@ class TestNewsletterUnsubscribe:
 
         response = api_client.post(
             "/api/newsletter/unsubscribe/",
-            {"email": "cliente@glorybelle.it"},
+            {"token": make_unsubscribe_token("cliente@glorybelle.it")},
             format="json",
         )
         assert response.status_code == 200
@@ -85,11 +86,11 @@ class TestNewsletterUnsubscribe:
         assert subscriber.is_active is False
         assert subscriber.unsubscribed_at is not None
 
-    def test_unsubscribe_nonexistent_email(self, api_client):
+    def test_unsubscribe_with_valid_token_for_unknown_email_is_still_200(self, api_client):
         """Should not reveal whether the email was subscribed."""
         response = api_client.post(
             "/api/newsletter/unsubscribe/",
-            {"email": "nonexistent@example.it"},
+            {"token": make_unsubscribe_token("nonexistent@example.it")},
             format="json",
         )
         assert response.status_code == 200

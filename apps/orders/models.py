@@ -120,6 +120,13 @@ class Order(models.Model):
         default="0.00",
         help_text=_("Importo dello sconto in euro."),
     )
+    discount_product_name = models.CharField(
+        _("Prodotto scontato"),
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("Il prodotto (una unità) a cui è stato applicato lo sconto di benvenuto."),
+    )
 
     shipping_cost = models.DecimalField(
         _("Costo spedizione"), max_digits=10, decimal_places=2, default="0.00"

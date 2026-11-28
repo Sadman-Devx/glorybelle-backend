@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 
 from . import services
+from .guest import guest_cart_key
 from .serializers import (
     AddToCartSerializer,
     CartSerializer,
@@ -20,15 +21,44 @@ from .serializers import (
 )
 
 
-def _get_cart(request):
-    """Get or create cart for the current request (user or guest session)."""
+def _get_cart(request, create=True):
+    """
+    Resolve the cart for this request.
+
+    1. logged-in user          -> the user's cart
+    2. X-Cart-Token header     -> the guest cart for that token (cookie-less, works cross-domain)
+    3. Django session cookie   -> legacy fallback
+
+    With ``create=False`` a read-only request for an unknown token returns None instead of
+    inserting a row (otherwise anyone could fill the table by sending random tokens).
+    """
     if request.user.is_authenticated:
         return services.get_or_create_cart(user=request.user)
-    else:
-        # Ensure session exists for guest
-        if not request.session.session_key:
-            request.session.create()
-        return services.get_or_create_cart(session_key=request.session.session_key)
+
+    key = guest_cart_key(request)
+    if key:
+        if create:
+            return services.get_or_create_cart(session_key=key)
+        from .models import Cart
+
+        return Cart.objects.filter(session_key=key, user__isnull=True).first()
+
+    # Legacy cookie-based guest session
+    if not request.session.session_key:
+        request.session.create()
+    return services.get_or_create_cart(session_key=request.session.session_key)
+
+
+EMPTY_CART = {
+    "id": None,
+    "items": [],
+    "total": "0.00",
+    "item_count": 0,
+    "discount": None,
+    "total_after_discount": "0.00",
+    "created_at": None,
+    "updated_at": None,
+}
 
 
 class CartView(APIView):
@@ -41,7 +71,9 @@ class CartView(APIView):
     serializer_class = CartSerializer
 
     def get(self, request):
-        cart = _get_cart(request)
+        cart = _get_cart(request, create=False)
+        if cart is None:
+            return Response(EMPTY_CART)
         serializer = CartSerializer(cart, context={"request": request})
         return Response(serializer.data)
 
@@ -118,12 +150,12 @@ class CartItemView(APIView):
 
 class CartMergeView(APIView):
     """
-    POST /api/cart/merge/ -> merge the guest cart of THIS browser session into
-    the authenticated user's cart (call right after login).
+    POST /api/cart/merge/ -> merge the guest cart of THIS browser into the
+    authenticated user's cart (call right after login).
 
-    The guest cart is identified by the server-side Django session cookie
-    (HttpOnly, so the frontend cannot read it). A ``session_key`` in the body
-    is deliberately ignored: honouring a client-supplied key would let any
+    The guest cart is identified by what only this browser holds: the X-Cart-Token
+    header (and, for old sessions, the HttpOnly Django session cookie). A ``session_key``
+    in the body is deliberately ignored: honouring a client-supplied key would let any
     logged-in user pull another visitor's cart into their own.
     """
 
@@ -131,9 +163,14 @@ class CartMergeView(APIView):
     serializer_class = CartSerializer
 
     def post(self, request):
-        session_key = request.session.session_key
-        if session_key:
-            services.merge_carts(session_key, request.user)
+        keys = []
+        token_key = guest_cart_key(request)
+        if token_key:
+            keys.append(token_key)
+        if request.session.session_key:
+            keys.append(request.session.session_key)
+        for key in keys:
+            services.merge_carts(key, request.user)
 
         cart = services.get_or_create_cart(user=request.user)
         return Response(

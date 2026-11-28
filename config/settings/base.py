@@ -304,6 +304,10 @@ CORS_ALLOW_ALL_ORIGINS = False
 if any("*" in origin for origin in CORS_ALLOWED_ORIGINS):
     raise ValueError("CORS_ALLOWED_ORIGINS must contain exact origins, not wildcards.")
 CORS_ALLOW_CREDENTIALS = True
+# X-Cart-Token identifies a guest cart without cookies (see apps/cart/guest.py).
+from corsheaders.defaults import default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = (*default_headers, "x-cart-token")
 
 # =============================================================================
 # Celery
