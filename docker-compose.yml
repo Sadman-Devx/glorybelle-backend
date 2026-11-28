@@ -30,7 +30,7 @@ x-backend: &backend
     - .env
   environment:
     # Container-internal hostnames override the localhost values in .env.
-    DATABASE_URL: postgres://${POSTGRES_USER:-glorybelle}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5434/${POSTGRES_DB:-glorybelle}
+    DATABASE_URL: postgres://${POSTGRES_USER:-glorybelle}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-glorybelle}
     REDIS_URL: redis://redis:6379/0
 
 services:
@@ -44,7 +44,7 @@ services:
     # Bound to loopback only: reachable from your machine (psql, pytest), never
     # from the network. Remove this block entirely on a server.
     ports:
-      - "127.0.0.1:${DB_PORT:-5434}:5434"
+      - "127.0.0.1:${DB_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
