@@ -12,6 +12,34 @@ def test_login_with_email(api_client, user):
     assert r.data["access"] and r.data["refresh"]
 
 
+def test_refresh_rotates_token_and_blacklists_previous_refresh(api_client, user):
+    login = api_client.post(URL, {"email": user.email, "password": "TestPass123!"}, format="json")
+    assert login.status_code == 200
+    old_refresh = login.data["refresh"]
+
+    refreshed = api_client.post(
+        "/api/accounts/token/refresh/",
+        {"refresh": old_refresh},
+        format="json",
+    )
+    assert refreshed.status_code == 200
+    assert refreshed.data["refresh"] != old_refresh
+
+    reused = api_client.post(
+        "/api/accounts/token/refresh/",
+        {"refresh": old_refresh},
+        format="json",
+    )
+    assert reused.status_code == 401
+
+    next_refresh = api_client.post(
+        "/api/accounts/token/refresh/",
+        {"refresh": refreshed.data["refresh"]},
+        format="json",
+    )
+    assert next_refresh.status_code == 200
+
+
 def test_login_with_email_is_case_insensitive(api_client, user):
     r = api_client.post(URL, {"email": user.email.upper(), "password": "TestPass123!"}, format="json")
     assert r.status_code == 200
