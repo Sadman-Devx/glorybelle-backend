@@ -22,8 +22,9 @@ Per architecture.md §1.3:
 import logging
 
 from django.db import transaction
+from django.db.models import Sum
 
-from apps.cart.models import Cart, CartItem, StockReservation
+from apps.cart.models import Cart, StockReservation
 from apps.catalog.models import ProductVariant
 from apps.orders.models import Order
 
@@ -43,71 +44,66 @@ def _is_event_processed(stripe_event_id):
     ).exists()
 
 
-def _release_reservations_for_order(order, variant):
-    """
-    Release ONLY this order's active reservations for the given variant.
-
-    CRITICAL FIX (P0 #2 & #3):
-    The previous implementation matched reservations by `cart_item__cart__user=order.user`
-    (handle_payment_succeeded) or by variant alone (handle_payment_failed).
-    Both were wrong:
-
-      - handle_payment_succeeded: for guest orders (order.user=None), the query
-        matched ALL guest carts' reservations, including reservations belonging
-        to OTHER guests. A guest's successful payment could release another
-        guest's in-progress cart reservation.
-
-      - handle_payment_failed: filtered ONLY by variant, ignoring the user/cart
-        entirely. One user's failed payment released EVERY OTHER user's
-        reservations for the same variant. This is a financial-trust bug.
-
-    The correct approach: scope the query to the CartItem rows that belong to
-    THIS order's items. Each OrderItem has a `variant_id` and a `quantity`,
-    and we need to find the matching CartItem (via variant) that produced
-    this order item's reservation.
-
-    The cleanest match is: for each OrderItem.variant, look for active
-    StockReservations where the cart_item's variant matches AND the cart
-    belongs to the same user (for logged-in) OR the same session_key
-    (for guest). But Order doesn't carry session_key, so for guest orders
-    we fall back to matching by variant + the order's email (which was
-    captured from the cart at checkout time).
-
-    TODO (P1): add an `order_id` FK on StockReservation so we can match
-    directly. For now, this scoped release is a substantial improvement over
-    the previous implementation.
-    """
-    # Active reservations for this variant, scoped to this order's user
-    # (for logged-in customers) — guest carts (user=None) are intentionally
-    # excluded here to avoid releasing another guest's reservation. Guest
-    # reservations are released by the periodic expiry task (every 60s).
-    if order.user is not None:
-        active_reservations = StockReservation.objects.filter(
-            variant=variant,
-            is_active=True,
-            cart_item__cart__user=order.user,
+def release_order_reservations(order, deduct_stock=False):
+    """Release only reservations associated with this order."""
+    order_lines = list(
+        order.items.values("variant_id")
+        .annotate(quantity=Sum("quantity"))
+        .order_by("variant_id")
+    )
+    reservations = list(
+        StockReservation.objects.select_for_update()
+        .filter(order=order, is_active=True)
+        .values("variant_id", "quantity")
+    )
+    released_by_variant = {}
+    for reservation in reservations:
+        variant_id = reservation["variant_id"]
+        released_by_variant[variant_id] = (
+            released_by_variant.get(variant_id, 0) + reservation["quantity"]
         )
-    else:
-        # Guest order — match by variant + the session_key/email on the order.
-        # Since Order doesn't currently carry session_key, we match by quantity
-        # only as a best-effort heuristic: find an active reservation for this
-        # variant with quantity == sum of this variant's order item quantity.
-        order_qty_for_variant = sum(
-            oi.quantity for oi in order.items.filter(variant=variant)
+    if reservations:
+        StockReservation.objects.filter(
+            order=order, is_active=True
+        ).update(is_active=False)
+
+    sold_by_variant = {
+        line["variant_id"]: line["quantity"] for line in order_lines
+    } if deduct_stock else {}
+    variant_ids = set(released_by_variant) | set(sold_by_variant)
+    variants = list(
+        ProductVariant.objects.select_for_update()
+        .filter(pk__in=variant_ids)
+        .order_by("pk")
+    )
+    for variant in variants:
+        variant.reserved_quantity = max(
+            0,
+            variant.reserved_quantity - released_by_variant.get(variant.pk, 0),
         )
-        active_reservations = StockReservation.objects.filter(
-            variant=variant,
-            is_active=True,
-            quantity=order_qty_for_variant,
-        ).order_by("created_at")[:1]  # take the oldest matching reservation
+        if deduct_stock:
+            variant.stock_quantity = max(
+                0, variant.stock_quantity - sold_by_variant.get(variant.pk, 0)
+            )
+    if variants:
+        fields = ["reserved_quantity"]
+        if deduct_stock:
+            fields.append("stock_quantity")
+        ProductVariant.objects.bulk_update(variants, fields)
 
-    total_released = 0
-    for reservation in active_reservations:
-        reservation.is_active = False
-        reservation.save(update_fields=["is_active"])
-        total_released += reservation.quantity
 
-    return total_released
+def _lock_order_then_payment(payment_intent_id):
+    """Use a consistent lock order with the pending-order expiry task."""
+    try:
+        payment_ref = Payment.objects.only("pk", "order_id").get(
+            stripe_payment_intent_id=payment_intent_id
+        )
+    except Payment.DoesNotExist:
+        raise _PaymentNotFound(payment_intent_id)
+
+    order = Order.objects.select_for_update().get(pk=payment_ref.order_id)
+    payment = Payment.objects.select_for_update().get(pk=payment_ref.pk)
+    return order, payment
 
 
 def handle_payment_succeeded(event):
@@ -197,12 +193,7 @@ def _mark_order_paid(stripe_event_id, payment_intent_id, stripe_charge_id):
         event_type="payment_intent.succeeded",
     )
 
-    try:
-        payment = Payment.objects.select_for_update().get(
-            stripe_payment_intent_id=payment_intent_id
-        )
-    except Payment.DoesNotExist:
-        raise _PaymentNotFound(payment_intent_id)
+    order, payment = _lock_order_then_payment(payment_intent_id)
 
     # Same PaymentIntent delivered again under a NEW event id: stock must not
     # be deducted twice.
@@ -214,7 +205,6 @@ def _mark_order_paid(stripe_event_id, payment_intent_id, stripe_charge_id):
         )
         return None
 
-    order = payment.order
     if order.status == "cancelled":
         # Customer paid an order that had been cancelled (e.g. superseded by a
         # newer checkout). The money is real, so it is recorded as paid — but
@@ -232,27 +222,8 @@ def _mark_order_paid(stripe_event_id, payment_intent_id, stripe_charge_id):
     order.status = "paid"
     order.save(update_fields=["status", "updated_at"])
 
-    # Step 3: Convert reservations into actual stock deductions
-    for order_item in order.items.all():
-        variant = (
-            ProductVariant.objects.select_for_update()
-            .get(id=order_item.variant_id)
-        )
-
-        # Decrement actual stock
-        variant.stock_quantity = max(
-            0, variant.stock_quantity - order_item.quantity
-        )
-
-        # Find and deactivate ONLY this order's reservations for this variant.
-        # P0 fix #3 — scoped to this order, never other customers' carts.
-        total_released = _release_reservations_for_order(order, variant)
-
-        # Decrement reserved_quantity (never below 0)
-        variant.reserved_quantity = max(
-            0, variant.reserved_quantity - total_released
-        )
-        variant.save(update_fields=["stock_quantity", "reserved_quantity"])
+    # Step 3: Convert this order's reservations into stock deductions.
+    release_order_reservations(order, deduct_stock=True)
 
     # Step 4: Clear the user's cart (only for logged-in users — guest carts are
     # cleared by the storefront after payment / the periodic expiry task).
@@ -296,14 +267,11 @@ def handle_payment_failed(event):
                 event_type="payment_intent.payment_failed",
             )
 
-            try:
-                payment = Payment.objects.select_for_update().get(
-                    stripe_payment_intent_id=payment_intent_id
-                )
-            except Payment.DoesNotExist:
-                raise _PaymentNotFound(payment_intent_id)
+            order, payment = _lock_order_then_payment(payment_intent_id)
 
-            if payment.status == "succeeded":
+            if payment.status == "succeeded" or order.status in {
+                "paid", "processing", "shipped", "delivered"
+            }:
                 logger.warning(
                     "Failure event %s for already-succeeded PaymentIntent %s ignored",
                     stripe_event_id,
@@ -311,26 +279,13 @@ def handle_payment_failed(event):
                 )
                 return True
 
-            order = payment.order
-
             payment.status = "failed"
             payment.save(update_fields=["status", "updated_at"])
 
             order.status = "cancelled"
             order.save(update_fields=["status", "updated_at"])
 
-            for order_item in order.items.all():
-                variant = (
-                    ProductVariant.objects.select_for_update()
-                    .get(id=order_item.variant_id)
-                )
-
-                total_released = _release_reservations_for_order(order, variant)
-
-                variant.reserved_quantity = max(
-                    0, variant.reserved_quantity - total_released
-                )
-                variant.save(update_fields=["reserved_quantity"])
+            release_order_reservations(order)
 
             logger.info(
                 "Payment failed for order %s — reservations released (scoped to this order)",

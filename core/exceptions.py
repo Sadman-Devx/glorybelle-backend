@@ -33,6 +33,14 @@ class CartEmpty(APIException):
     default_code = "cart_empty"
 
 
+class CheckoutConflict(APIException):
+    """A pending checkout cannot be safely replayed or superseded."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "Il checkout precedente è cambiato o non può essere annullato in sicurezza."
+    default_code = "checkout_conflict"
+
+
 class PaymentError(APIException):
     """Raised on payment processing failures."""
 

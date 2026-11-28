@@ -12,6 +12,8 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from simple_history.models import HistoricalRecords
 
+from apps.cart.models import Cart
+
 
 class Order(models.Model):
     """
@@ -52,6 +54,14 @@ class Order(models.Model):
         blank=True,
         related_name="orders",
         verbose_name=_("Utente"),
+    )
+    cart = models.ForeignKey(
+        Cart,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="checkout_orders",
+        verbose_name=_("Carrello checkout"),
     )
     email = models.EmailField(_("Email"))
     status = models.CharField(

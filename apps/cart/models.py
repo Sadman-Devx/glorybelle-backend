@@ -120,6 +120,14 @@ class StockReservation(models.Model):
         related_name="reservations",
         verbose_name=_("Variante"),
     )
+    order = models.ForeignKey(
+        "orders.Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stock_reservations",
+        verbose_name=_("Ordine checkout"),
+    )
     quantity = models.PositiveIntegerField(_("Quantità riservata"))
     expires_at = models.DateTimeField(_("Scade il"), db_index=True)
     is_active = models.BooleanField(_("Attiva"), default=True, db_index=True)

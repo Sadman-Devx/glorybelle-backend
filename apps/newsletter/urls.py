@@ -3,7 +3,11 @@ GLORYBELLE — Newsletter URL Configuration.
 """
 from django.urls import path
 
-from .views import NewsletterSubscribeView, NewsletterUnsubscribeView
+from .views import (
+    NewsletterConfirmView,
+    NewsletterSubscribeView,
+    NewsletterUnsubscribeView,
+)
 
 urlpatterns = [
     path(
@@ -15,5 +19,10 @@ urlpatterns = [
         "newsletter/unsubscribe/",
         NewsletterUnsubscribeView.as_view(),
         name="newsletter-unsubscribe",
+    ),
+    path(
+        "newsletter/confirm/",
+        NewsletterConfirmView.as_view(),
+        name="newsletter-confirm",
     ),
 ]

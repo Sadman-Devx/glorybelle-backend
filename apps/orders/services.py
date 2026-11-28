@@ -17,7 +17,12 @@ from rest_framework.exceptions import ValidationError
 
 from apps.accounts.models import Address
 from apps.cart.models import StockReservation
-from core.exceptions import CartEmpty, PaymentServiceUnavailable, ReservationExpired
+from core.exceptions import (
+    CartEmpty,
+    CheckoutConflict,
+    PaymentServiceUnavailable,
+    ReservationExpired,
+)
 
 from .models import Order, OrderItem
 
@@ -46,6 +51,141 @@ def _snapshot_address(address):
         "postal_code": address.postal_code,
         "country": address.country,
     }
+
+
+def _resolve_checkout_addresses(
+    user,
+    shipping_address_id,
+    shipping_address_data,
+    billing_address_id,
+    billing_address_data,
+    billing_same_as_shipping,
+):
+    if shipping_address_id and user:
+        try:
+            shipping_addr = Address.objects.get(id=shipping_address_id, user=user)
+        except Address.DoesNotExist:
+            raise ValidationError(
+                {"shipping_address_id": "Indirizzo di spedizione non trovato."}
+            )
+        shipping = _snapshot_address(shipping_addr)
+    elif shipping_address_data:
+        shipping = shipping_address_data
+    else:
+        raise ValidationError(
+            {"shipping_address": "È necessario un indirizzo di spedizione."}
+        )
+
+    if billing_same_as_shipping:
+        billing = shipping
+    elif billing_address_id and user:
+        try:
+            billing_addr = Address.objects.get(id=billing_address_id, user=user)
+        except Address.DoesNotExist:
+            raise ValidationError(
+                {"billing_address_id": "Indirizzo di fatturazione non trovato."}
+            )
+        billing = _snapshot_address(billing_addr)
+    elif billing_address_data:
+        billing = billing_address_data
+    else:
+        billing = shipping
+
+    return shipping, billing
+
+
+def checkout_matches_order(order, cart, data, user):
+    """Compare a pending order with current server-priced cart and checkout data."""
+    if order.cart_id != cart.pk:
+        return False
+
+    shipping, billing = _resolve_checkout_addresses(
+        user=user,
+        shipping_address_id=data.get("shipping_address_id"),
+        shipping_address_data=data.get("shipping_address"),
+        billing_address_id=data.get("billing_address_id"),
+        billing_address_data=data.get("billing_address"),
+        billing_same_as_shipping=data.get("billing_same_as_shipping", True),
+    )
+
+    order_shipping = {
+        "first_name": order.shipping_first_name,
+        "last_name": order.shipping_last_name,
+        "line1": order.shipping_line1,
+        "line2": order.shipping_line2,
+        "city": order.shipping_city,
+        "province": order.shipping_province,
+        "postal_code": order.shipping_postal_code,
+        "country": order.shipping_country,
+    }
+    order_billing = {
+        "first_name": order.billing_first_name,
+        "last_name": order.billing_last_name,
+        "line1": order.billing_line1,
+        "line2": order.billing_line2,
+        "city": order.billing_city,
+        "province": order.billing_province,
+        "postal_code": order.billing_postal_code,
+        "country": order.billing_country,
+    }
+
+    cart_items = list(
+        cart.items.select_related("variant").order_by("variant_id")
+    )
+    order_items = list(order.items.order_by("variant_id"))
+    return (
+        order.email.strip().casefold() == data["email"].strip().casefold()
+        and order.notes == data.get("notes", "")
+        and order_shipping == shipping
+        and order_billing == billing
+        and [
+            (item.variant_id, item.quantity, item.variant.price)
+            for item in cart_items
+        ]
+        == [
+            (item.variant_id, item.quantity, item.unit_price)
+            for item in order_items
+        ]
+    )
+
+
+def supersede_pending_checkout_order(order):
+    """Cancel the old Stripe intent before marking its pending order superseded."""
+    from apps.payments.models import Payment
+    from apps.payments.stripe_client import (
+        PaymentIntentNotCancellable,
+        cancel_payment_intent,
+    )
+
+    payment = Payment.objects.select_for_update().filter(order=order).first()
+    if payment and payment.status in {"succeeded", "refunded"}:
+        raise CheckoutConflict(
+            "Il pagamento precedente è già stato completato e non può essere sostituito."
+        )
+
+    payment_intent_id = (
+        payment.stripe_payment_intent_id
+        if payment
+        else order.stripe_payment_intent_id
+    )
+    if payment_intent_id and (
+        payment is None or payment.status in {"pending", "failed"}
+    ):
+        try:
+            cancel_payment_intent(payment_intent_id)
+        except PaymentIntentNotCancellable as exc:
+            if exc.retryable:
+                raise PaymentServiceUnavailable() from exc
+            raise CheckoutConflict(
+                "Il pagamento precedente non può essere annullato in sicurezza."
+            ) from exc
+
+    if payment and payment.status == "pending":
+        payment.status = "failed"
+        payment.save(update_fields=["status", "updated_at"])
+    StockReservation.objects.filter(order=order, is_active=True).update(order=None)
+    order.status = "cancelled"
+    order.save(update_fields=["status", "updated_at"])
 
 
 def is_first_purchase(user) -> bool:
@@ -217,37 +357,14 @@ def create_order_from_cart(
                 )
             )
 
-    # Resolve shipping address
-    if shipping_address_id and user:
-        try:
-            shipping_addr = Address.objects.get(id=shipping_address_id, user=user)
-        except Address.DoesNotExist:
-            raise ValidationError(
-                {"shipping_address_id": "Indirizzo di spedizione non trovato."}
-            )
-        shipping = _snapshot_address(shipping_addr)
-    elif shipping_address_data:
-        shipping = shipping_address_data
-    else:
-        raise ValidationError(
-            {"shipping_address": "È necessario un indirizzo di spedizione."}
-        )
-
-    # Resolve billing address
-    if billing_same_as_shipping:
-        billing = shipping
-    elif billing_address_id and user:
-        try:
-            billing_addr = Address.objects.get(id=billing_address_id, user=user)
-        except Address.DoesNotExist:
-            raise ValidationError(
-                {"billing_address_id": "Indirizzo di fatturazione non trovato."}
-            )
-        billing = _snapshot_address(billing_addr)
-    elif billing_address_data:
-        billing = billing_address_data
-    else:
-        billing = shipping
+    shipping, billing = _resolve_checkout_addresses(
+        user=user,
+        shipping_address_id=shipping_address_id,
+        shipping_address_data=shipping_address_data,
+        billing_address_id=billing_address_id,
+        billing_address_data=billing_address_data,
+        billing_same_as_shipping=billing_same_as_shipping,
+    )
 
     with transaction.atomic():
         # Calculate subtotal server-side (rule.md: never trust client price)
@@ -297,6 +414,7 @@ def create_order_from_cart(
         # Create Order
         order_kwargs = dict(
             order_number=generate_order_number(),
+            cart=cart,
             user=user if user and user.is_authenticated else None,
             email=email,
             status="pending",
@@ -336,6 +454,11 @@ def create_order_from_cart(
         # Create OrderItems
         for item_data in order_items_data:
             OrderItem.objects.create(order=order, **item_data)
+
+        StockReservation.objects.filter(
+            cart_item__cart=cart,
+            is_active=True,
+        ).update(order=order)
 
         if discount_amount > 0:
             logger.info(

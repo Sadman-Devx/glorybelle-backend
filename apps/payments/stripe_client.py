@@ -127,6 +127,29 @@ def cancel_payment_intent(payment_intent_id):
     except stripe.error.InvalidRequestError as e:
         if getattr(e, "code", None) == "resource_missing":
             return
+        if getattr(e, "code", None) == "payment_intent_unexpected_state":
+            try:
+                intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+            except (
+                stripe.error.APIConnectionError,
+                stripe.error.APIError,
+                stripe.error.RateLimitError,
+            ) as retrieve_error:
+                raise PaymentIntentNotCancellable(
+                    str(retrieve_error), retryable=True
+                ) from retrieve_error
+            except stripe.error.InvalidRequestError as retrieve_error:
+                if getattr(retrieve_error, "code", None) == "resource_missing":
+                    return
+                raise PaymentIntentNotCancellable(
+                    str(retrieve_error), retryable=False
+                ) from retrieve_error
+            except stripe.error.StripeError as retrieve_error:
+                raise PaymentIntentNotCancellable(
+                    str(retrieve_error), retryable=False
+                ) from retrieve_error
+            if intent.status == "canceled":
+                return
         raise PaymentIntentNotCancellable(str(e), retryable=False) from e
     except stripe.error.StripeError as e:
         raise PaymentIntentNotCancellable(str(e), retryable=False) from e

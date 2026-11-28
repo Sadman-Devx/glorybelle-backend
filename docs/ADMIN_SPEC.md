@@ -25,7 +25,7 @@ an implemented contract.
 | `Address` | User; `first_name`, `last_name`, `line1`, optional `line2`, `city`, `province`, `postal_code`, `country`, `is_default`, `created_at`, `updated_at`. |
 | `Payment` | One-to-one order; unique Stripe PaymentIntent ID; optional charge ID; `amount`, `currency`, `status`, unique idempotency key, timestamps. |
 | `ProcessedWebhookEvent` | Unique Stripe event ID, event type, processing timestamp; used for webhook idempotency. |
-| Other domain models | `Cart`, `CartItem`, `StockReservation`, `Invoice`, `Review`, `Wishlist`, `WishlistItem`, and `NewsletterSubscriber`. Newsletter unsubscribe is represented by `is_active` and `unsubscribed_at`; reviews have `is_approved`. |
+| Other domain models | `Cart`, `CartItem`, `StockReservation`, `Invoice`, `Review`, `Wishlist`, `WishlistItem`, and `NewsletterSubscriber`. Newsletter consent uses `is_active`, `is_confirmed`, and `unsubscribed_at`; reviews have `is_approved`. |
 
 There is **no `Enquiry` model** in the installed app list or API routes.
 
@@ -70,7 +70,7 @@ routes**, not an admin API.
 | `POST /api/webhooks/stripe/` | Stripe webhook; no DRF auth, signature-verified. |
 | `GET /api/products/{slug}/reviews/`, `POST /api/products/{slug}/reviews/create/` | Public approved reviews; authenticated review submission, pending moderation. |
 | `GET /api/wishlist/`, `POST /api/wishlist/toggle/`, `DELETE /api/wishlist/items/{product_id}/` | Authenticated customer’s wishlist. |
-| `POST /api/newsletter/subscribe/`, `POST /api/newsletter/unsubscribe/` | Public newsletter operations. |
+| `POST /api/newsletter/subscribe/`, `POST /api/newsletter/confirm/`, `POST /api/newsletter/unsubscribe/` | Public newsletter operations; subscription requires a signed email confirmation. |
 | `GET /api/schema/`, `GET /api/docs/`, `GET /api/redoc/` | OpenAPI schema and documentation. |
 
 There are no `/api/admin/` routes. The default DRF permission is

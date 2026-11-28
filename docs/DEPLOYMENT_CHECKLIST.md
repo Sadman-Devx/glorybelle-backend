@@ -28,6 +28,19 @@ python manage.py check --deploy
 
 Errors must be fixed before going live; warnings are acceptable only when the feature is intentionally off.
 
+### Abandoned pending orders
+Set `ORDER_PENDING_EXPIRY_MINUTES` to the number of minutes an unpaid pending
+order may remain open; the default is `60`. Keep it above the stock reservation
+window (`STOCK_RESERVATION_MINUTES`, default `15`) and allow enough time for
+Stripe 3DS checkout. When the threshold passes, Celery beat asks Stripe to
+cancel each PaymentIntent before marking the order cancelled or releasing that
+order's reservations. If Stripe cannot confirm cancellation, the order is left
+untouched and retried on a later run.
+
+The Celery worker **and** Celery beat must be running. The
+`cancel_expired_pending_orders` task is scheduled every minute and processes at
+most 100 orders per run.
+
 ### Client IP rate limits
 Set `NUM_PROXIES` in `.env` to the number of trusted reverse-proxy hops before Django:
 * Direct client-to-Django traffic: `NUM_PROXIES=0`.
@@ -48,7 +61,8 @@ when the value is `0`.
 ## 4. Smoke test after deploy
 1. Place a test order with card `4242 4242 4242 4242`.
 2. Order becomes `paid`, stock drops, confirmation email arrives, an `Invoice` row appears.
-3. `celery -A config inspect ping` answers; `release_expired_reservations` runs every minute (celery beat).
+3. `celery -A config inspect ping` answers; `release_expired_reservations` and
+   `cancel_expired_pending_orders` run every minute (celery beat).
 
 ## 5. Storefront and API on different domains
 Guest carts are identified by the `X-Cart-Token` header (a random token the browser keeps in
@@ -70,6 +84,11 @@ localStorage), **not** by a cookie, so they work when the storefront (`shop.exam
   `POST /api/newsletter/unsubscribe/` only accepts that token; a bare e-mail address is rejected.
   Make sure `FRONTEND_URL` is the public storefront URL (`check --deploy` warns otherwise).
   Tokens are signed with `SECRET_KEY`: rotating the key invalidates links in e-mails already sent.
+* **Newsletter double opt-in** — new and re-subscribed addresses remain unconfirmed until the
+  recipient clicks the signed link at `/newsletter/conferma`; links expire after 7 days.
+  Existing active subscribers are grandfathered as confirmed by the newsletter migration.
+  Subscribe requests are limited to 5 per IP per hour, and a confirmation email is sent at most
+  once per address per `NEWSLETTER_CONFIRMATION_COOLDOWN_MINUTES` (default `15`).
 * **First-purchase discount** — a customer holds at most one open (unpaid) discounted order. Starting a new
   checkout cancels the previous pending one, **including its Stripe PaymentIntent**. If that PaymentIntent is
   already paid / processing, the new order is created without the discount (the earlier order already used it).

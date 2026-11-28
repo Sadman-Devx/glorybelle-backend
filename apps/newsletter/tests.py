@@ -15,9 +15,11 @@ class TestNewsletterSubscribe:
             {"email": "cliente@glorybelle.it"},
             format="json",
         )
-        assert response.status_code == 201
+        assert response.status_code == 202
         assert NewsletterSubscriber.objects.filter(
-            email="cliente@glorybelle.it", is_active=True
+            email="cliente@glorybelle.it",
+            is_active=True,
+            is_confirmed=False,
         ).exists()
 
     def test_subscribe_duplicate_is_graceful(self, api_client):
@@ -32,7 +34,7 @@ class TestNewsletterSubscribe:
             {"email": "cliente@glorybelle.it"},
             format="json",
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
         assert NewsletterSubscriber.objects.filter(
             email="cliente@glorybelle.it"
         ).count() == 1
@@ -61,10 +63,12 @@ class TestNewsletterSubscribe:
             {"email": "cliente@glorybelle.it"},
             format="json",
         )
-        assert response.status_code == 200
-        assert NewsletterSubscriber.objects.get(
+        subscriber = NewsletterSubscriber.objects.get(
             email="cliente@glorybelle.it"
-        ).is_active
+        )
+        assert response.status_code == 202
+        assert subscriber.is_active
+        assert not subscriber.is_confirmed
 
 
 @pytest.mark.django_db

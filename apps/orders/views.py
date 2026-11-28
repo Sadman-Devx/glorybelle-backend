@@ -13,15 +13,21 @@ AND passed to Stripe as the PaymentIntent idempotency_key. Retries with the same
 key return the original order instead of creating a duplicate.
 """
 import logging
+from datetime import timedelta
 
+from django.conf import settings
+from django.db import transaction
 from django.db.models import Count
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.cart.models import Cart
 from apps.cart.views import _get_cart
 from apps.payments.stripe_client import create_payment_intent
+from core.exceptions import CheckoutConflict
 from core.throttling import ScopedRateThrottle
 
 from . import services
@@ -34,6 +40,25 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _checkout_response(order, replay=False):
+    client_secret, payment_intent_id = create_payment_intent(order)
+    if order.stripe_payment_intent_id != payment_intent_id:
+        order.stripe_payment_intent_id = payment_intent_id
+        order.save(update_fields=["stripe_payment_intent_id"])
+
+    response_data = {
+        "order": OrderSerializer(order).data,
+        "client_secret": client_secret,
+        "payment_intent_id": payment_intent_id,
+    }
+    if replay:
+        response_data["idempotent_replay"] = True
+    return Response(
+        response_data,
+        status=status.HTTP_200_OK if replay else status.HTTP_201_CREATED,
+    )
 
 
 class CheckoutView(APIView):
@@ -61,63 +86,72 @@ class CheckoutView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        # Idempotency: if the client sent a key and an Order already exists
-        # with that key, return the existing order instead of creating a new one.
-        idempotency_key = data.get("idempotency_key")
-        if idempotency_key:
-            existing = Order.objects.filter(idempotency_key=idempotency_key).first()
-            if existing:
-                # Return the existing order + a fresh client_secret (the
-                # PaymentIntent still exists on Stripe's side; we just need
-                # to give the client a secret to retry confirmation).
-                # Note: create_payment_intent is itself idempotent (same order
-                # → same PaymentIntent via stripe_client.py's deterministic key).
-                client_secret, _ = create_payment_intent(existing)
-                return Response(
-                    {
-                        "order": OrderSerializer(existing).data,
-                        "client_secret": client_secret,
-                        "payment_intent_id": existing.stripe_payment_intent_id,
-                        "idempotent_replay": True,
-                    },
-                    status=status.HTTP_200_OK,
-                )
-
         cart = _get_cart(request)
-
-        # Determine user
         user = request.user if request.user.is_authenticated else None
+        idempotency_key = data.get("idempotency_key")
 
-        # Create order from cart (services.py — all business logic there)
-        order = services.create_order_from_cart(
-            cart=cart,
-            email=data["email"],
-            shipping_address_id=data.get("shipping_address_id"),
-            shipping_address_data=data.get("shipping_address"),
-            billing_address_id=data.get("billing_address_id"),
-            billing_address_data=data.get("billing_address"),
-            billing_same_as_shipping=data.get("billing_same_as_shipping", True),
-            user=user,
-            notes=data.get("notes", ""),
-            idempotency_key=idempotency_key,
-        )
+        # Serialize checkout attempts for the same cart through Stripe creation too.
+        with transaction.atomic():
+            cart = Cart.objects.select_for_update().get(pk=cart.pk)
 
-        # Create Stripe PaymentIntent — uses order.order_number as the Stripe
-        # idempotency key (P0 fix #1, deterministic).
-        client_secret, payment_intent_id = create_payment_intent(order)
+            if idempotency_key:
+                existing = (
+                    Order.objects.select_for_update()
+                    .filter(idempotency_key=idempotency_key)
+                    .first()
+                )
+                if existing:
+                    if (
+                        existing.cart_id != cart.pk
+                        or existing.status == "cancelled"
+                        or not services.checkout_matches_order(
+                            existing, cart, data, user
+                        )
+                    ):
+                        raise CheckoutConflict(
+                            "La chiave di checkout è già stata usata per un ordine diverso."
+                        )
+                    return _checkout_response(existing, replay=True)
 
-        # Store the PaymentIntent ID on the order
-        order.stripe_payment_intent_id = payment_intent_id
-        order.save(update_fields=["stripe_payment_intent_id"])
+            replay_window = timedelta(
+                minutes=getattr(settings, "STOCK_RESERVATION_MINUTES", 15)
+            )
+            replay_cutoff = timezone.now() - replay_window
+            pending_orders = list(
+                Order.objects.select_for_update()
+                .filter(cart=cart, status="pending")
+                .order_by("-created_at")
+            )
+            replay_order = None
+            for pending_order in pending_orders:
+                same_checkout = services.checkout_matches_order(
+                    pending_order, cart, data, user
+                )
+                if (
+                    replay_order is None
+                    and same_checkout
+                    and pending_order.created_at >= replay_cutoff
+                ):
+                    replay_order = pending_order
+                else:
+                    services.supersede_pending_checkout_order(pending_order)
 
-        return Response(
-            {
-                "order": OrderSerializer(order).data,
-                "client_secret": client_secret,
-                "payment_intent_id": payment_intent_id,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+            if replay_order:
+                return _checkout_response(replay_order, replay=True)
+
+            order = services.create_order_from_cart(
+                cart=cart,
+                email=data["email"],
+                shipping_address_id=data.get("shipping_address_id"),
+                shipping_address_data=data.get("shipping_address"),
+                billing_address_id=data.get("billing_address_id"),
+                billing_address_data=data.get("billing_address"),
+                billing_same_as_shipping=data.get("billing_same_as_shipping", True),
+                user=user,
+                notes=data.get("notes", ""),
+                idempotency_key=idempotency_key,
+            )
+            return _checkout_response(order)
 
 
 class OrderHistoryView(generics.ListAPIView):

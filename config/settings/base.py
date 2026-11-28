@@ -26,6 +26,18 @@ ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv(
 NUM_PROXIES = config("NUM_PROXIES", default=0, cast=int)
 if NUM_PROXIES < 0:
     raise ValueError("NUM_PROXIES must be a non-negative integer.")
+ORDER_PENDING_EXPIRY_MINUTES = config(
+    "ORDER_PENDING_EXPIRY_MINUTES", default=60, cast=int
+)
+if ORDER_PENDING_EXPIRY_MINUTES <= 0:
+    raise ValueError("ORDER_PENDING_EXPIRY_MINUTES must be a positive integer.")
+NEWSLETTER_CONFIRMATION_COOLDOWN_MINUTES = config(
+    "NEWSLETTER_CONFIRMATION_COOLDOWN_MINUTES", default=15, cast=int
+)
+if NEWSLETTER_CONFIRMATION_COOLDOWN_MINUTES <= 0:
+    raise ValueError(
+        "NEWSLETTER_CONFIRMATION_COOLDOWN_MINUTES must be a positive integer."
+    )
 
 # Frontend URL — used for password-reset email link (P1 fix #10)
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
@@ -239,6 +251,7 @@ REST_FRAMEWORK = {
         "enquiry_create": "5/hour",
         "order_lookup": "20/min",
         "login": "10/min",
+        "newsletter_subscribe": "5/hour",
     },
 }
 

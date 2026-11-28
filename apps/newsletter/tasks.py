@@ -6,6 +6,7 @@ Per rule.md: "Never call Stripe, Fattura24, or SendGrid synchronously."
 P1 fix #13: replaced bare `except Exception` with explicit Exception catch
 that uses logger.exception (full traceback) rather than logger.error (single line).
 """
+from html import escape
 import logging
 
 from celery import shared_task
@@ -30,7 +31,9 @@ def send_newsletter(self, subject, html_content):
     from .tokens import unsubscribe_url
 
     subscribers = list(
-        NewsletterSubscriber.objects.filter(is_active=True).values_list(
+        NewsletterSubscriber.objects.filter(
+            is_active=True, is_confirmed=True
+        ).values_list(
             "email", flat=True
         )
     )
@@ -66,7 +69,7 @@ def send_newsletter(self, subject, html_content):
         body = html_content + (
             '<hr><p style="font-size:12px;color:#777">'
             "Ricevi questa email perché sei iscritto alla newsletter GLORYBELLE. "
-            f'<a href="{link}">Annulla l\'iscrizione</a>.</p>'
+            f'<a href="{escape(link, quote=True)}">Annulla l\'iscrizione</a>.</p>'
         )
         try:
             message = Mail(
@@ -93,3 +96,68 @@ def send_newsletter(self, subject, html_content):
             exc=failures[0], countdown=60 * (2 ** self.request.retries)
         )
     return sent
+
+
+@shared_task(
+    name="apps.newsletter.tasks.send_confirmation_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_confirmation_email(self, subscriber_id, confirmation_nonce):
+    """Send an HTML-escaped, expiring opt-in link to a pending subscriber."""
+    from .models import NewsletterSubscriber
+    from .tokens import confirmation_url
+
+    subscriber = NewsletterSubscriber.objects.filter(
+        pk=subscriber_id,
+        is_active=True,
+        is_confirmed=False,
+        confirmation_nonce=confirmation_nonce,
+    ).first()
+    if subscriber is None:
+        logger.info(
+            "Confirmation email skipped for stale subscriber id=%s",
+            subscriber_id,
+        )
+        return False
+
+    sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
+    if not sendgrid_api_key or sendgrid_api_key == "placeholder":
+        logger.info(
+            "SendGrid not configured — confirmation email not sent to pending subscriber."
+        )
+        return False
+
+    from_email = getattr(
+        settings, "DEFAULT_FROM_EMAIL", "newsletter@glorybelle.it"
+    )
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
+
+    link = confirmation_url(subscriber.email, str(subscriber.confirmation_nonce))
+    safe_email = escape(subscriber.email)
+    safe_link = escape(link, quote=True)
+    message = Mail(
+        from_email=from_email,
+        to_emails=subscriber.email,
+        subject="Conferma l'iscrizione alla newsletter GLORYBELLE",
+        html_content=(
+            "<p>Hai richiesto di iscriverti alla newsletter GLORYBELLE con "
+            f"<strong>{safe_email}</strong>.</p>"
+            f'<p><a href="{safe_link}">Conferma l\'iscrizione</a></p>'
+            "<p>Il link scade tra 7 giorni. Se non hai richiesto tu l'iscrizione, "
+            "puoi ignorare questa email.</p>"
+        ),
+    )
+    try:
+        SendGridAPIClient(sendgrid_api_key).send(message)
+    except Exception as exc:  # noqa: BLE001 — task retries transient provider failures
+        logger.exception(
+            "Newsletter confirmation email failed for subscriber id=%s",
+            subscriber_id,
+        )
+        raise self.retry(exc=exc) from exc
+
+    logger.info("Newsletter confirmation email sent for subscriber id=%s", subscriber_id)
+    return True

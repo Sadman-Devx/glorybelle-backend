@@ -1,7 +1,7 @@
 """
 Celery application for GLORYBELLE.
 
-Handles async tasks: email, invoicing, stock reservation cleanup.
+Handles async tasks: email, invoicing, and order/reservation cleanup.
 """
 import os
 
@@ -23,5 +23,9 @@ app.conf.beat_schedule = {
     "release-expired-reservations": {
         "task": "apps.cart.tasks.release_expired_reservations",
         "schedule": 60.0,  # Every 60 seconds
+    },
+    "cancel-expired-pending-orders": {
+        "task": "apps.orders.tasks.cancel_expired_pending_orders",
+        "schedule": 60.0,
     },
 }
