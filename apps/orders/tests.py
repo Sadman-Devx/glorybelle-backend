@@ -94,7 +94,8 @@ class TestOrderCreation:
         # Verify totals are server-calculated
         expected_subtotal = Decimal("149.00") * 2 + Decimal("99.00") * 1
         assert order.subtotal == expected_subtotal
-        expected_discount = (expected_subtotal * Decimal("0.10")).quantize(Decimal("0.01"))
+        # Welcome discount = 10% of ONE unit of the most expensive item (149.00), not of the basket
+        expected_discount = Decimal("14.90")
         assert order.discount_percent == Decimal("10.00")
         assert order.discount_amount == expected_discount
         assert order.total == expected_subtotal - expected_discount  # free shipping

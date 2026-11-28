@@ -7,7 +7,8 @@ New feature: first-purchase discount — 10% off for newly registered customers.
 import logging
 import random
 import string
-from decimal import Decimal
+from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.db import transaction
@@ -66,33 +67,59 @@ def is_first_purchase(user) -> bool:
     ).exists()
 
 
-def calculate_discount(subtotal: Decimal, user) -> tuple[Decimal, Decimal]:
+@dataclass(frozen=True)
+class FirstPurchaseDiscount:
+    """Result of compute_first_purchase_discount()."""
+
+    percent: Decimal
+    amount: Decimal
+    product_name: str = ""
+    unit_price: Decimal = Decimal("0.00")
+
+    @property
+    def applies(self) -> bool:
+        return self.amount > 0
+
+
+NO_DISCOUNT = FirstPurchaseDiscount(Decimal("0.00"), Decimal("0.00"))
+
+
+def compute_first_purchase_discount(lines, user) -> FirstPurchaseDiscount:
     """
-    Calculate discount for an order.
+    Welcome discount for a newly registered customer.
 
-    Returns:
-        (discount_percent, discount_amount)
+    Rule: ``FIRST_PURCHASE_DISCOUNT_PERCENT`` (10%) off **ONE product — a single unit of
+    the most expensive item in the cart**, never the whole basket. It is granted
+    automatically to a signed-in customer who has no completed order yet, and it has NO
+    expiry: it is still there a month (or a year) after registering, until the first order
+    is actually paid.
+
+    ``lines`` is an iterable of ``(product_name, unit_price, quantity)``. The cart preview
+    (GET /api/cart/) and the order creation both call this one function, so the discount
+    the customer sees in the cart is exactly the discount that is charged.
     """
-    discount_percent = Decimal("0.00")
-    discount_amount = Decimal("0.00")
+    lines = [(name, Decimal(price), qty) for name, price, qty in lines if qty > 0]
+    if not lines or not is_first_purchase(user):
+        return NO_DISCOUNT
 
-    if not is_first_purchase(user):
-        return discount_percent, discount_amount
-
+    subtotal = sum((price * qty for _, price, qty in lines), Decimal("0.00"))
     min_subtotal = getattr(
         settings, "FIRST_PURCHASE_DISCOUNT_MIN_SUBTOTAL", Decimal("0.00")
     )
     if subtotal < min_subtotal:
-        return discount_percent, discount_amount
+        return NO_DISCOUNT
 
-    discount_percent = getattr(
-        settings, "FIRST_PURCHASE_DISCOUNT_PERCENT", Decimal("10.00")
+    percent = Decimal(
+        getattr(settings, "FIRST_PURCHASE_DISCOUNT_PERCENT", Decimal("10.00"))
     )
-    discount_amount = (subtotal * discount_percent / Decimal("100")).quantize(
-        Decimal("0.01")
+    # max() returns the FIRST maximal element, so ties go to the item added first
+    name, unit_price, _qty = max(lines, key=lambda line: line[1])
+    amount = (unit_price * percent / Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
     )
-
-    return discount_percent, discount_amount
+    if amount <= 0:
+        return NO_DISCOUNT
+    return FirstPurchaseDiscount(percent, amount, name, unit_price)
 
 
 def _release_first_purchase_discount_holds(user) -> bool:
@@ -246,13 +273,20 @@ def create_order_from_cart(
 
         # Calculate discount (first-purchase 10% off) — at most ONE open
         # discounted order per user (see _release_first_purchase_discount_holds).
-        discount_percent, discount_amount = Decimal("0.00"), Decimal("0.00")
+        discount = NO_DISCOUNT
         if user and user.is_authenticated:
             from django.contrib.auth import get_user_model
 
             get_user_model().objects.select_for_update().get(pk=user.pk)
             if _release_first_purchase_discount_holds(user):
-                discount_percent, discount_amount = calculate_discount(subtotal, user)
+                discount = compute_first_purchase_discount(
+                    [
+                        (d["product_name"], d["unit_price"], d["quantity"])
+                        for d in order_items_data
+                    ],
+                    user,
+                )
+        discount_percent, discount_amount = discount.percent, discount.amount
 
         # Shipping cost — free shipping for now
         shipping_cost = Decimal("0.00")
@@ -288,6 +322,7 @@ def create_order_from_cart(
             subtotal=subtotal,
             discount_percent=discount_percent,
             discount_amount=discount_amount,
+            discount_product_name=discount.product_name,
             shipping_cost=shipping_cost,
             total=total,
             notes=notes,

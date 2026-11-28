@@ -30,7 +30,7 @@ x-backend: &backend
     - .env
   environment:
     # Container-internal hostnames override the localhost values in .env.
-    DATABASE_URL: postgres://${POSTGRES_USER:-glorybelle}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-glorybelle}
+    DATABASE_URL: postgres://${POSTGRES_USER:-glorybelle}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5434/${POSTGRES_DB:-glorybelle}
     REDIS_URL: redis://redis:6379/0
 
 services:
@@ -44,11 +44,11 @@ services:
     # Bound to loopback only: reachable from your machine (psql, pytest), never
     # from the network. Remove this block entirely on a server.
     ports:
-      - "127.0.0.1:${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_PORT:-5434}:5434"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -60,7 +60,7 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -91,7 +91,7 @@ services:
       # Only used when Cloudinary is NOT configured; keeps uploads across restarts.
       - media_files:/app/media
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/', timeout=5)"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/', timeout=5)" ]
       interval: 30s
       timeout: 10s
       retries: 3

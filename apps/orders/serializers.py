@@ -69,6 +69,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "subtotal",
             "discount_percent",
             "discount_amount",
+            "discount_product_name",
             "has_discount",
             "shipping_cost",
             "total",

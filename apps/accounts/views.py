@@ -232,13 +232,17 @@ class FirstPurchaseDiscountView(APIView):
         if request.user.is_authenticated:
             eligible = is_first_purchase(request.user)
             if eligible:
-                message = "Hai diritto al 10% di sconto sul tuo primo ordine!"
+                message = (
+                    "Hai diritto al 10% di sconto su un prodotto del tuo primo ordine: "
+                    "lo sconto viene applicato automaticamente."
+                )
             else:
                 message = ""
         else:
             eligible = True
             message = (
-                "Registra un account e ottieni il 10% di sconto sul primo ordine."
+                "Registra un account e ottieni il 10% di sconto su un prodotto "
+                "del tuo primo ordine."
             )
 
         percent = getattr(

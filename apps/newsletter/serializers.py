@@ -11,6 +11,6 @@ class NewsletterSubscribeSerializer(serializers.Serializer):
 
 
 class NewsletterUnsubscribeSerializer(serializers.Serializer):
-    """Input for newsletter unsubscription."""
+    """Input for newsletter unsubscription: the signed token from the e-mail link."""
 
-    email = serializers.EmailField()
+    token = serializers.CharField(max_length=1000)

@@ -4,13 +4,14 @@ GLORYBELLE — Newsletter Views.
 Public endpoints — no authentication required.
 """
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import NewsletterSubscriber
 from .serializers import NewsletterSubscribeSerializer, NewsletterUnsubscribeSerializer
+from .tokens import read_unsubscribe_token
 
 
 class NewsletterSubscribeView(APIView):
@@ -49,9 +50,11 @@ class NewsletterSubscribeView(APIView):
 
 class NewsletterUnsubscribeView(APIView):
     """
-    POST /api/newsletter/unsubscribe/
+    POST /api/newsletter/unsubscribe/   body: {"token": "<signed token from the e-mail link>"}
 
-    Unsubscribe from the newsletter. Soft-delete (GDPR).
+    Unsubscribe from the newsletter. Soft-delete (GDPR). The token is signed, so only the
+    link we put in a newsletter e-mail can unsubscribe an address — a bare e-mail address
+    is NOT accepted any more (anyone could otherwise unsubscribe anyone).
     """
 
     permission_classes = [AllowAny]
@@ -60,16 +63,15 @@ class NewsletterUnsubscribeView(APIView):
     def post(self, request):
         serializer = NewsletterUnsubscribeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data["email"].lower()
-
-        try:
-            subscriber = NewsletterSubscriber.objects.get(email=email)
-            subscriber.is_active = False
-            subscriber.unsubscribed_at = timezone.now()
-            subscriber.save(update_fields=["is_active", "unsubscribed_at"])
-        except NewsletterSubscriber.DoesNotExist:
-            pass  # Don't reveal whether the email was subscribed
-
+        email = read_unsubscribe_token(serializer.validated_data["token"])
+        if email is None:
+            raise serializers.ValidationError(
+                {"token": "Link di annullamento non valido o danneggiato."}
+            )
+        NewsletterSubscriber.objects.filter(email__iexact=email, is_active=True).update(
+            is_active=False, unsubscribed_at=timezone.now()
+        )
+        # Same answer whether or not the address was still subscribed (idempotent)
         return Response(
             {"message": "Iscrizione annullata con successo."},
             status=status.HTTP_200_OK,
