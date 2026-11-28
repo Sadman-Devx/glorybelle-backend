@@ -18,11 +18,11 @@ from django.db.models import Count
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.cart.views import _get_cart
 from apps.payments.stripe_client import create_payment_intent
+from core.throttling import ScopedRateThrottle
 
 from . import services
 from .models import Order

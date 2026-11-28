@@ -23,6 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # =============================================================================
 SECRET_KEY = config("SECRET_KEY")
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
+NUM_PROXIES = config("NUM_PROXIES", default=0, cast=int)
+if NUM_PROXIES < 0:
+    raise ValueError("NUM_PROXIES must be a non-negative integer.")
 
 # Frontend URL — used for password-reset email link (P1 fix #10)
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
@@ -225,9 +228,10 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
+        "core.throttling.AnonRateThrottle",
+        "core.throttling.UserRateThrottle",
     ],
+    "NUM_PROXIES": NUM_PROXIES,
     "DEFAULT_THROTTLE_RATES": {
         "anon": "1000/hour",
         "user": "1000/hour",

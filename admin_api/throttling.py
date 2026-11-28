@@ -1,9 +1,9 @@
 import hashlib
 
-from rest_framework.throttling import SimpleRateThrottle
+from core.throttling import ClientIPRateThrottle
 
 
-class AdminLoginRateThrottle(SimpleRateThrottle):
+class AdminLoginRateThrottle(ClientIPRateThrottle):
     scope = "admin_login"
 
     def get_cache_key(self, request, view):

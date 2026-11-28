@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 import stripe
+from django.conf import settings
 from django.test import override_settings
 
 from apps.payments import stripe_client
@@ -66,6 +67,24 @@ def test_broken_celery_transport_is_an_error():
     with override_settings(**GOOD, CELERY_BROKER_URL="redis://localhost:6379/0"), \
             patch.object(checks, "redis_transport_problem", return_value=RuntimeError("redis-py too old")):
         assert "glorybelle.E005" in _ids(checks.check_background_services(None))
+
+
+def test_zero_num_proxies_warns_with_deployment_values():
+    rest_framework = {**settings.REST_FRAMEWORK, "NUM_PROXIES": 0}
+    with override_settings(REST_FRAMEWORK=rest_framework):
+        issues = checks.check_num_proxies(None)
+
+    warning = next(issue for issue in issues if issue.id == "glorybelle.W006")
+    assert "direct=0" in warning.hint
+    assert "one reverse proxy (nginx/Traefik)=1" in warning.hint
+    assert "Cloudflare + nginx=2" in warning.hint
+
+
+@pytest.mark.parametrize("num_proxies", [1, 2])
+def test_configured_num_proxies_does_not_warn(num_proxies):
+    rest_framework = {**settings.REST_FRAMEWORK, "NUM_PROXIES": num_proxies}
+    with override_settings(REST_FRAMEWORK=rest_framework):
+        assert checks.check_num_proxies(None) == []
 
 
 # ---- cancel_payment_intent: WHY it failed decides what the checkout does next
