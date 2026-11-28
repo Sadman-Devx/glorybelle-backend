@@ -21,10 +21,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from core.permissions import IsOwner
+from core.throttling import ScopedRateThrottle
 
 from .models import Address, CustomerProfile
 from .serializers import (

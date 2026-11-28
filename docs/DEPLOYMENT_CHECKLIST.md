@@ -24,8 +24,20 @@ python manage.py check --deploy
 | `glorybelle.W003` | `FATTURA24_API_KEY` missing → no invoices |
 | `glorybelle.W004` | `FRONTEND_URL` still points to localhost (broken links in emails) |
 | `glorybelle.W005` | `CORS_ALLOWED_ORIGINS` only has localhost origins |
+| `glorybelle.W006` | `NUM_PROXIES` is 0; verify it matches the deployment proxy chain |
 
 Errors must be fixed before going live; warnings are acceptable only when the feature is intentionally off.
+
+### Client IP rate limits
+Set `NUM_PROXIES` in `.env` to the number of trusted reverse-proxy hops before Django:
+* Direct client-to-Django traffic: `NUM_PROXIES=0`.
+* One reverse proxy (nginx or Traefik): `NUM_PROXIES=1`.
+* Cloudflare in front of nginx: `NUM_PROXIES=2`.
+
+The value controls which address is selected from `X-Forwarded-For`; configure each
+trusted proxy to append or sanitize that header correctly. Keep the default `0` unless
+the proxy chain is configured and verified. `check --deploy` reports `glorybelle.W006`
+when the value is `0`.
 
 ## 3. Stripe
 * Dashboard → Developers → Webhooks → endpoint `https://<api-host>/api/webhooks/stripe/`,

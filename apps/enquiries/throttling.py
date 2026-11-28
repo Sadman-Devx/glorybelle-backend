@@ -1,7 +1,7 @@
-from rest_framework.throttling import SimpleRateThrottle
+from core.throttling import ClientIPRateThrottle
 
 
-class EnquiryCreateRateThrottle(SimpleRateThrottle):
+class EnquiryCreateRateThrottle(ClientIPRateThrottle):
     scope = "enquiry_create"
 
     def get_cache_key(self, request, view):

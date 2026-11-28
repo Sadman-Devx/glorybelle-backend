@@ -11,6 +11,22 @@ from django.core.checks import Error, Tags, Warning, register
 LOCAL_HINTS = ("localhost", "127.0.0.1")
 
 
+@register(Tags.security, deploy=True)
+def check_num_proxies(app_configs, **kwargs):
+    if settings.REST_FRAMEWORK.get("NUM_PROXIES", 0) != 0:
+        return []
+    return [Warning(
+        "NUM_PROXIES is 0; forwarded client addresses are ignored. This is correct "
+        "for direct traffic, but traffic behind a proxy will share its IP rate-limit bucket.",
+        hint=(
+            "Set NUM_PROXIES to the trusted hop count: direct=0, "
+            "one reverse proxy (nginx/Traefik)=1, Cloudflare + nginx=2. "
+            "Ensure trusted proxies append/sanitize X-Forwarded-For."
+        ),
+        id="glorybelle.W006",
+    )]
+
+
 def redis_transport_problem():
     """
     Return the exception kombu raises when its Redis transport cannot be used with the
